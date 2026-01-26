@@ -109,16 +109,18 @@ public with sharing class Trace {
    *   - If it does not match the current Trace context
    */
   public void log(String message) {
-    if (message == null) {
-      throw new TraceException('Log message is null.');
-    }
-
-    if (message == '') {
-      throw new TraceException('Log message is empty.');
-    }
-
     if (TraceFlow.isEmpty()) {
       throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    }
+
+    if(message == null) {
+      TraceFlow.log('Trace log message is null.');
+      return;
+    }
+
+    if(message == '') {
+      TraceFlow.log('Trace log message is empty.');
+      return;
     }
 
     TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Log);

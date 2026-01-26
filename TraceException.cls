@@ -18,7 +18,7 @@
  * @description Custom exception class for Trace-related errors
  * Thrown when there are issues with Trace context management,
  * invalid operations, or incorrect usage of the Trace API.
- * 
+ *
  * This exception provides additional context about the error:
  * - The current context name when the error occurred
  * - The expected context name (if applicable)

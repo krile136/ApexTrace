@@ -13,6 +13,7 @@ ApexTrace is an innovative framework that manages the start-to-end lifecycle of 
 2. **Testing**: Assert execution paths and outcomes using structured history
 
 Unlike traditional logging frameworks, ApexTrace provides:
+
 - ✅ **Strict context management** with automatic nesting validation
 - ✅ **Test-friendly API** for asserting execution flow
 - ✅ **Zero configuration** - works out of the box
@@ -50,6 +51,7 @@ sf project deploy start -d force-app/main/default/classes/ApexTrace
 ### Manual Installation
 
 Copy the following files to your project:
+
 - `Trace.cls`
 - `TraceFlow.cls`
 - `TraceHistory.cls`
@@ -59,18 +61,18 @@ Copy the following files to your project:
 
 ApexTrace includes a Makefile for convenient operations:
 
-| Command | Description |
-|---------|-------------|
-| `make install` | Deploy ApexTrace to your org |
-| `make uninstall` | Remove ApexTrace from your org |
-| `make reinstall` | Uninstall and reinstall ApexTrace |
-| `make test` | Run all ApexTrace tests |
-| `make test-trace` | Run Trace tests only |
-| `make test-traceflow` | Run TraceFlow tests only |
-| `make test-tracehistory` | Run TraceHistory tests only |
-| `make test-traceexception` | Run TraceException tests only |
-| `make test-all` | Run all tests with detailed output |
-| `make help` | Show available commands |
+| Command                    | Description                        |
+| -------------------------- | ---------------------------------- |
+| `make install`             | Deploy ApexTrace to your org       |
+| `make uninstall`           | Remove ApexTrace from your org     |
+| `make reinstall`           | Uninstall and reinstall ApexTrace  |
+| `make test`                | Run all ApexTrace tests            |
+| `make test-trace`          | Run Trace tests only               |
+| `make test-traceflow`      | Run TraceFlow tests only           |
+| `make test-tracehistory`   | Run TraceHistory tests only        |
+| `make test-traceexception` | Run TraceException tests only      |
+| `make test-all`            | Run all tests with detailed output |
+| `make help`                | Show available commands            |
 
 ### Quick Commands
 
@@ -84,6 +86,7 @@ make reinstall
 # Run specific test class
 make test-trace
 ```
+
 ## 🚀 Quick Start
 
 ### Basic Usage
@@ -93,12 +96,12 @@ public class QuoteProcessor {
   public void process(Quote__c quote) {
     Trace trace = Trace.of('QuoteProcessor.process');
     trace.start();
-    
+
     if (quote == null) {
       trace.skip('Quote is null');
       return;
     }
-    
+
     try {
       // Your processing logic
       Integer count = processQuote(quote);
@@ -136,13 +139,13 @@ trace.finish();                          // 4. End (finish/skip/abort)
 
 ### Operations
 
-| Operation | Purpose | When to Use |
-|-----------|---------|-------------|
-| `start()` | Begin a trace context | At the start of processing |
-| `log(message)` | Log intermediate steps | During processing |
-| `skip(reason)` | Skip processing | Early return conditions |
-| `finish(result)` | Complete successfully | Normal completion |
-| `abort(reason)` | Terminate abnormally | Exception handling |
+| Operation        | Purpose                | When to Use                |
+| ---------------- | ---------------------- | -------------------------- |
+| `start()`        | Begin a trace context  | At the start of processing |
+| `log(message)`   | Log intermediate steps | During processing          |
+| `skip(reason)`   | Skip processing        | Early return conditions    |
+| `finish(result)` | Complete successfully  | Normal completion          |
+| `abort(reason)`  | Terminate abnormally   | Exception handling         |
 
 ### Nested Contexts
 
@@ -151,12 +154,12 @@ ApexTrace automatically manages nested contexts:
 ```apex
 Trace outer = Trace.of('OuterProcess');
 outer.start();
-  
+
   Trace inner = Trace.of('InnerProcess');
   inner.start();
   inner.log('Inner processing');
   inner.finish();
-  
+
 outer.log('Outer processing');
 outer.finish();
 ```
@@ -173,10 +176,10 @@ static void testProcess_WhenValidData_ThenFinished() {
   // Arrange
   TraceFlow.clear();  // Always clear before test
   Quote__c quote = createTestQuote();
-  
+
   // Act
   new QuoteProcessor().process(quote);
-  
+
   // Assert
   Assert.isTrue(TraceFlow.isLastFinish());
   Assert.isTrue(TraceFlow.lastHistoryContains('Processed: 1'));
@@ -190,10 +193,10 @@ static void testProcess_WhenValidData_ThenFinished() {
 static void testProcess_WhenNullQuote_ThenSkipped() {
   // Arrange
   TraceFlow.clear();
-  
+
   // Act
   new QuoteProcessor().process(null);
-  
+
   // Assert - Verify the execution was skipped
   Assert.isTrue(TraceFlow.isLastSkip());
   Assert.isTrue(TraceFlow.lastHistoryContains('Quote is null'));
@@ -204,7 +207,7 @@ static void testProcess_WhenError_ThenAborted() {
   // Arrange
   TraceFlow.clear();
   Quote__c invalidQuote = createInvalidQuote();
-  
+
   // Act & Assert
   try {
     new QuoteProcessor().process(invalidQuote);
@@ -241,14 +244,14 @@ public class AccountService {
   public void updateAccounts(List<Account> accounts) {
     Trace trace = Trace.of('AccountService.updateAccounts');
     trace.start();
-    
+
     if (accounts == null || accounts.isEmpty()) {
       trace.skip('No accounts to update');
       return;
     }
-    
+
     trace.log('Updating ' + accounts.size() + ' accounts');
-    
+
     try {
       update accounts;
       trace.finish('Updated: ' + accounts.size());
@@ -267,16 +270,16 @@ public class AccountBatch implements Database.Batchable<sObject> {
   public void execute(Database.BatchableContext bc, List<Account> scope) {
     Trace trace = Trace.of('AccountBatch.execute');
     trace.start();
-    
+
     trace.log('Processing ' + scope.size() + ' records');
-    
+
     Integer successCount = 0;
     Integer errorCount = 0;
-    
+
     for (Account acc : scope) {
       Trace itemTrace = Trace.of('AccountBatch.processAccount');
       itemTrace.start();
-      
+
       try {
         processAccount(acc);
         itemTrace.finish();
@@ -286,7 +289,7 @@ public class AccountBatch implements Database.Batchable<sObject> {
         errorCount++;
       }
     }
-    
+
     trace.finish('Success: ' + successCount + ', Errors: ' + errorCount);
   }
 }
@@ -299,13 +302,13 @@ public class QuoteTriggerHandler {
   public void onBeforeInsert(List<Quote__c> quotes) {
     Trace trace = Trace.of('QuoteTriggerHandler.onBeforeInsert');
     trace.start();
-    
+
     trace.log('Validating ' + quotes.size() + ' quotes');
     validateQuotes(quotes);
-    
+
     trace.log('Calculating totals');
     calculateTotals(quotes);
-    
+
     trace.finish('Processed: ' + quotes.size());
   }
 }
@@ -315,57 +318,57 @@ public class QuoteTriggerHandler {
 
 ### Trace
 
-| Method | Description |
-|--------|-------------|
+| Method                         | Description                |
+| ------------------------------ | -------------------------- |
 | `Trace.of(String contextName)` | Create a new trace context |
-| `start()` | Start the trace context |
-| `log(String message)` | Log a message |
-| `skip()` | Skip with no reason |
-| `skip(String reason)` | Skip with reason |
-| `finish()` | Finish with no result |
-| `finish(String result)` | Finish with result |
-| `abort()` | Abort with no reason |
-| `abort(String reason)` | Abort with reason |
+| `start()`                      | Start the trace context    |
+| `log(String message)`          | Log a message              |
+| `skip()`                       | Skip with no reason        |
+| `skip(String reason)`          | Skip with reason           |
+| `finish()`                     | Finish with no result      |
+| `finish(String result)`        | Finish with result         |
+| `abort()`                      | Abort with no reason       |
+| `abort(String reason)`         | Abort with reason          |
 
 ### TraceFlow
 
-| Method | Description |
-|--------|-------------|
-| `isEmpty()` | Check if trace stack is empty |
-| `isLastStart()` | Check if last operation was start |
-| `isLastLog()` | Check if last operation was log |
-| `isLastSkip()` | Check if last operation was skip |
-| `isLastAbort()` | Check if last operation was abort |
-| `isLastFinish()` | Check if last operation was finish |
+| Method                             | Description                         |
+| ---------------------------------- | ----------------------------------- |
+| `isEmpty()`                        | Check if trace stack is empty       |
+| `isLastStart()`                    | Check if last operation was start   |
+| `isLastLog()`                      | Check if last operation was log     |
+| `isLastSkip()`                     | Check if last operation was skip    |
+| `isLastAbort()`                    | Check if last operation was abort   |
+| `isLastFinish()`                   | Check if last operation was finish  |
 | `lastHistoryContains(String text)` | Check if last message contains text |
-| `getAllHistories()` | Get all history entries |
-| `getHistoryCount()` | Get total history count |
-| `getStackDepth()` | Get current nesting depth |
-| `clear()` | Clear all traces (test only) |
+| `getAllHistories()`                | Get all history entries             |
+| `getHistoryCount()`                | Get total history count             |
+| `getStackDepth()`                  | Get current nesting depth           |
+| `clear()`                          | Clear all traces (test only)        |
 
 ### TraceHistory
 
-| Method | Description |
-|--------|-------------|
-| `getType()` | Get the history type |
-| `getContextName()` | Get the context name |
-| `getMessage()` | Get the message |
-| `getTimestamp()` | Get timestamp (milliseconds) |
-| `getDateTime()` | Get DateTime object |
-| `isStart()` | Check if type is Start |
-| `isLog()` | Check if type is Log |
-| `isSkip()` | Check if type is Skip |
-| `isAbort()` | Check if type is Abort |
-| `isFinish()` | Check if type is Finish |
+| Method                      | Description                    |
+| --------------------------- | ------------------------------ |
+| `getType()`                 | Get the history type           |
+| `getContextName()`          | Get the context name           |
+| `getMessage()`              | Get the message                |
+| `getTimestamp()`            | Get timestamp (milliseconds)   |
+| `getDateTime()`             | Get DateTime object            |
+| `isStart()`                 | Check if type is Start         |
+| `isLog()`                   | Check if type is Log           |
+| `isSkip()`                  | Check if type is Skip          |
+| `isAbort()`                 | Check if type is Abort         |
+| `isFinish()`                | Check if type is Finish        |
 | `containsText(String text)` | Check if message contains text |
 
 ### TraceException
 
-| Method | Description |
-|--------|-------------|
-| `getCurrentContext()` | Get current context when error occurred |
-| `getExpectedContext()` | Get expected context |
-| `getOperationType()` | Get operation type that failed |
+| Method                 | Description                             |
+| ---------------------- | --------------------------------------- |
+| `getCurrentContext()`  | Get current context when error occurred |
+| `getExpectedContext()` | Get expected context                    |
+| `getOperationType()`   | Get operation type that failed          |
 
 ## 🎨 Best Practices
 
@@ -433,12 +436,12 @@ public class MyService {
   public MyService(Account account) {
     Trace trace = Trace.of('MyService.constructor');
     trace.start();
-    
+
     if (account == null) {
       trace.skip('Account is null');
       return;
     }
-    
+
     // initialize
     trace.finish();
   }
@@ -485,12 +488,12 @@ outer.finish();  // ✅ Auto-aborts Inner, then finishes Outer
 
 ApexTrace maintains high test coverage:
 
-| Class | Coverage |
-|-------|----------|
-| Trace | 98% |
-| TraceFlow | 98% |
-| TraceHistory | 100% |
-| TraceException | 100% |
+| Class          | Coverage |
+| -------------- | -------- |
+| Trace          | 98%      |
+| TraceFlow      | 98%      |
+| TraceHistory   | 100%     |
+| TraceException | 100%     |
 
 **Total Tests**: 61  
 **Pass Rate**: 100%

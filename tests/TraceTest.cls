@@ -60,35 +60,27 @@ public with sharing class TraceTest {
   }
 
   @isTest
-  static void testLog_WhenApplyNull_ThenThrowException() {
+  static void testLog_WhenApplyNull_ThenNoException() {
     // Arrange
     Trace trace = Trace.of('TestContext');
     trace.start();
 
     // Act / Assert
-    try {
-      trace.log(null);
-      Assert.fail('Exception was not thrown.');
-    } catch (TraceException e) {
-      String expect = 'Log message is null.';
-      Assert.areEqual(expect, e.getMessage());
-    }
+    trace.log(null);
+    String expect = 'Trace log message is null';
+    Assert.isTrue(TraceFlow.lastHistoryContains(expect));
   }
 
   @isTest
-  static void testLog_WhenApplyEmptyString_ThenThrowException() {
+  static void testLog_WhenApplyEmptyString_ThenNoException() {
     // Arrange
     Trace trace = Trace.of('TestContext');
     trace.start();
 
     // Act / Assert
-    try {
-      trace.log('');
-      Assert.fail('Exception was not thrown.');
-    } catch (TraceException e) {
-      String expect = 'Log message is empty.';
-      Assert.areEqual(expect, e.getMessage());
-    }
+    trace.log('');
+    String expect = 'Trace log message is empty';
+    Assert.isTrue(TraceFlow.lastHistoryContains(expect));
   }
 
   @isTest

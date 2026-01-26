@@ -92,9 +92,7 @@ public with sharing class TraceFlow {
             'No matching Trace context found for {1} operation in current context: {0}.',
             new List<String>{ expectedContextName, expectedHistoryType.name() }
           );
-          throw new TraceException(errorMessage)
-            .setExpectedContext(expectedContextName)
-            .setOperationType(expectedHistoryType.name());
+          throw new TraceException(errorMessage).setExpectedContext(expectedContextName).setOperationType(expectedHistoryType.name());
         }
         abort('Automatically aborted due to context mismatch. Expected context: ' + expectedContextName);
       }

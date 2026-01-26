@@ -23,11 +23,7 @@ public with sharing class TraceHistoryTest {
   @isTest
   static void testConstructor_WhenCalled_ThenPropertiesAreSet() {
     // Arrange / Act
-    TraceHistory history = new TraceHistory(
-      TraceHistory.HistoryType.Log,
-      'TestContext',
-      'Test message'
-    );
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Log, 'TestContext', 'Test message');
 
     // Assert
     Assert.areEqual(TraceHistory.HistoryType.Log, history.getType());
@@ -40,11 +36,7 @@ public with sharing class TraceHistoryTest {
   @isTest
   static void testConstructor_WhenNullMessage_ThenMessageIsNull() {
     // Arrange / Act
-    TraceHistory history = new TraceHistory(
-      TraceHistory.HistoryType.Start,
-      'TestContext',
-      null
-    );
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Start, 'TestContext', null);
 
     // Assert
     Assert.areEqual(TraceHistory.HistoryType.Start, history.getType());
@@ -56,11 +48,7 @@ public with sharing class TraceHistoryTest {
   static void testGetDateTime_WhenCalled_ThenReturnsCorrectDateTime() {
     // Arrange
     Long beforeTimestamp = DateTime.now().getTime();
-    TraceHistory history = new TraceHistory(
-      TraceHistory.HistoryType.Finish,
-      'TestContext',
-      'Test result'
-    );
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Finish, 'TestContext', 'Test result');
     Long afterTimestamp = DateTime.now().getTime();
 
     // Act
@@ -104,11 +92,7 @@ public with sharing class TraceHistoryTest {
   @isTest
   static void testContainsText_WhenTextExists_ThenReturnTrue() {
     // Arrange
-    TraceHistory history = new TraceHistory(
-      TraceHistory.HistoryType.Log,
-      'TestContext',
-      'This is a test message'
-    );
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Log, 'TestContext', 'This is a test message');
 
     // Act / Assert
     Assert.isTrue(history.containsText('test'));
@@ -119,11 +103,7 @@ public with sharing class TraceHistoryTest {
   @isTest
   static void testContainsText_WhenNullMessage_ThenReturnFalse() {
     // Arrange
-    TraceHistory history = new TraceHistory(
-      TraceHistory.HistoryType.Start,
-      'TestContext',
-      null
-    );
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Start, 'TestContext', null);
 
     // Act / Assert
     Assert.isFalse(history.containsText('anything'));
