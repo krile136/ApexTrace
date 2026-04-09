@@ -24,9 +24,8 @@ Unlike traditional logging frameworks, ApexTrace provides:
 ### Using Makefile (Recommended)
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/ApexTrace.git
-cd ApexTrace/force-app/main/default/classes/ApexTrace
+$ cd force-app/main/default/classes
+$ git submodule add https://github.com/krile136/ApexTrace.git ApexTrace
 
 # Install to your org
 make install
@@ -36,16 +35,6 @@ make test
 
 # Show all available commands
 make help
-```
-
-### Using SFDX
-
-```bash
-# Clone or download this repository
-git clone https://github.com/yourusername/ApexTrace.git
-
-# Deploy to your org
-sf project deploy start -d force-app/main/default/classes/ApexTrace
 ```
 
 ### Manual Installation
