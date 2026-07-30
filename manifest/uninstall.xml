@@ -6,6 +6,8 @@
         <members>TraceHistory</members>
         <members>TraceException</members>
         <members>TraceUsage</members>
+        <members>ILimitsReader</members>
+        <members>LimitsReader</members>
         <members>TraceTest</members>
         <members>TraceFlowTest</members>
         <members>TraceHistoryTest</members>
