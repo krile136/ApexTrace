@@ -35,6 +35,7 @@ public with sharing class TraceHistory {
   private String contextName;
   private String message;
   private Long timestamp;
+  private TraceUsage usage;
 
   /**
    * @description Constructor to create a TraceHistory entry
@@ -71,6 +72,24 @@ public with sharing class TraceHistory {
    */
   public String getMessage() {
     return this.message;
+  }
+
+  /**
+   * @description Attaches the governor usage consumed by the context this entry closes
+   * @param usage The consumed usage
+   * @return This TraceHistory instance (for chaining)
+   */
+  public TraceHistory setUsage(TraceUsage usage) {
+    this.usage = usage;
+    return this;
+  }
+
+  /**
+   * @description Gets the governor usage consumed by the context this entry closes
+   * @return The TraceUsage, or null for entries that do not close a context (Start / Log)
+   */
+  public TraceUsage getUsage() {
+    return this.usage;
   }
 
   /**

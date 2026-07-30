@@ -224,6 +224,39 @@ Integer count = TraceFlow.getHistoryCount();
 Assert.areEqual(5, count);
 ```
 
+### Governor Usage Tracking
+
+Every context automatically records the governor limit consumption between its
+`start()` and its close (`finish()` / `skip()` / `abort()`). The consumption is
+appended to the debug log of the closing entry and can be asserted in tests:
+
+```apex
+new QuoteRecalculationUsecase(quoteIds).invoke();
+
+// Assert the governor cost of the traced section (chainable)
+TraceFlow.lastUsage()
+  .assertSoqlQueriesAtMost(3)
+  .assertDmlStatementsAtMost(1);
+
+// Or inspect the raw numbers
+TraceUsage usage = TraceFlow.lastUsage();
+System.debug(usage.getSoqlQueries());   // SOQL queries issued
+System.debug(usage.getSoqlRows());      // rows returned by SOQL
+System.debug(usage.getDmlStatements()); // DML statements issued
+System.debug(usage.getDmlRows());       // rows processed by DML
+System.debug(usage.getCallouts());      // callouts made
+
+// Usage is attached to the history entry that closed the context
+TraceUsage sameUsage = TraceFlow.lastHistory().getUsage();
+```
+
+Notes:
+
+- Only deterministic metrics are tracked (SOQL queries / SOQL rows / DML statements / DML rows / callouts). CPU time and heap are intentionally excluded because they fluctuate between runs.
+- A parent context's usage includes its nested children (everything consumed between start and close).
+- Assertion helpers throw a catchable `TraceException` (instead of `Assert.fail`) with the full usage breakdown, so failures are testable and self-explanatory.
+- Debug logs now show the cost of each section, e.g. `FINISH: QuoteRecalculation\nUsage: SOQL: 3 (rows: 120), DML: 1 (rows: 30), Callouts: 0`.
+
 ## 🎯 Use Cases
 
 ### 1. Service Layer

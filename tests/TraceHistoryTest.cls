@@ -110,6 +110,29 @@ public with sharing class TraceHistoryTest {
   }
 
   @isTest
+  static void testSetUsage_WhenAttached_ThenGetUsageReturnsIt() {
+    // Arrange
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Finish, 'TestContext', 'result');
+    TraceUsage usage = TraceUsage.capture();
+
+    // Act
+    TraceHistory returned = history.setUsage(usage);
+
+    // Assert
+    Assert.areEqual(usage, history.getUsage());
+    Assert.areEqual(history, returned);
+  }
+
+  @isTest
+  static void testGetUsage_WhenNotAttached_ThenReturnNull() {
+    // Arrange
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Start, 'TestContext', null);
+
+    // Act / Assert
+    Assert.isNull(history.getUsage());
+  }
+
+  @isTest
   static void testAllHistoryTypes_WhenCreated_ThenTypeIsCorrect() {
     // Arrange / Act
     TraceHistory startHistory = new TraceHistory(TraceHistory.HistoryType.Start, 'Test', null);

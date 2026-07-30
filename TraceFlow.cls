@@ -32,6 +32,7 @@
 public with sharing class TraceFlow {
   private static List<Trace> traces = new List<Trace>();
   private static List<TraceHistory> histories = new List<TraceHistory>();
+  private static List<TraceUsage> startSnapshots = new List<TraceUsage>();
 
   private static TraceMode mode = Test.isRunningTest() ? TraceMode.Strict : TraceMode.Relaxed;
 
@@ -108,6 +109,7 @@ public with sharing class TraceFlow {
       return;
     }
     traces.add(newTrace);
+    startSnapshots.add(TraceUsage.capture());
     String contextName = currentContextName();
     histories.add(new TraceHistory(TraceHistory.HistoryType.Start, contextName, null));
     String logMessage = 'START: ' + contextName + ' is starting';
@@ -130,8 +132,9 @@ public with sharing class TraceFlow {
    */
   public static void skip() {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Skip, contextName, null));
-    String logMessage = 'SKIP: ' + contextName + ' is skipped';
+    TraceUsage usage = currentUsage();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Skip, contextName, null).setUsage(usage));
+    String logMessage = 'SKIP: ' + contextName + ' is skipped' + usageSuffix(usage);
     System.debug(logMessage);
     pop();
   }
@@ -142,8 +145,9 @@ public with sharing class TraceFlow {
    */
   public static void skip(String reason) {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Skip, contextName, reason));
-    String logMessage = 'SKIP: ' + contextName + ' is skipped for the following reason.\nReason: ' + reason;
+    TraceUsage usage = currentUsage();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Skip, contextName, reason).setUsage(usage));
+    String logMessage = 'SKIP: ' + contextName + ' is skipped for the following reason.\nReason: ' + reason + usageSuffix(usage);
     System.debug(logMessage);
     pop();
   }
@@ -153,8 +157,9 @@ public with sharing class TraceFlow {
    */
   public static void finish() {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Finish, contextName, null));
-    String logMessage = 'FINISH: ' + contextName;
+    TraceUsage usage = currentUsage();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Finish, contextName, null).setUsage(usage));
+    String logMessage = 'FINISH: ' + contextName + usageSuffix(usage);
     System.debug(logMessage);
     pop();
   }
@@ -165,8 +170,9 @@ public with sharing class TraceFlow {
    */
   public static void finish(String result) {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Finish, contextName, result));
-    String logMessage = 'FINISH: ' + contextName + '\nResult: ' + result;
+    TraceUsage usage = currentUsage();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Finish, contextName, result).setUsage(usage));
+    String logMessage = 'FINISH: ' + contextName + '\nResult: ' + result + usageSuffix(usage);
     System.debug(logMessage);
     pop();
   }
@@ -176,8 +182,9 @@ public with sharing class TraceFlow {
    */
   public static void abort() {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Abort, contextName, null));
-    String logMessage = 'ABORT: ' + contextName + ' is aborted.';
+    TraceUsage usage = currentUsage();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Abort, contextName, null).setUsage(usage));
+    String logMessage = 'ABORT: ' + contextName + ' is aborted.' + usageSuffix(usage);
     System.debug(logMessage);
     pop();
   }
@@ -188,8 +195,9 @@ public with sharing class TraceFlow {
    */
   public static void abort(String result) {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Abort, contextName, result));
-    String logMessage = 'ABORT: ' + contextName + ' is aborted for the following reason.\nReason: ' + result;
+    TraceUsage usage = currentUsage();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Abort, contextName, result).setUsage(usage));
+    String logMessage = 'ABORT: ' + contextName + ' is aborted for the following reason.\nReason: ' + result + usageSuffix(usage);
     System.debug(logMessage);
     pop();
   }
@@ -215,6 +223,44 @@ public with sharing class TraceFlow {
       return;
     }
     traces.remove(traces.size() - 1);
+    if (!startSnapshots.isEmpty()) {
+      startSnapshots.remove(startSnapshots.size() - 1);
+    }
+  }
+
+  /**
+   * @description Calculates the governor usage consumed since the current context started
+   * @return The consumed TraceUsage, or null if no start snapshot exists
+   */
+  private static TraceUsage currentUsage() {
+    if (startSnapshots.isEmpty()) {
+      return null;
+    }
+    return TraceUsage.capture().since(startSnapshots[startSnapshots.size() - 1]);
+  }
+
+  /**
+   * @description Builds the debug log suffix for the given usage
+   * @param usage The usage to format (may be null)
+   * @return The formatted suffix, or an empty string if usage is null
+   */
+  private static String usageSuffix(TraceUsage usage) {
+    return usage == null ? '' : '\nUsage: ' + usage.format();
+  }
+
+  /**
+   * @description Gets the governor usage of the most recently closed context.
+   * A context's usage includes everything consumed between its start and its
+   * close, so a parent context's usage includes its nested children.
+   * @return The TraceUsage recorded on the most recent Skip / Abort / Finish entry, or null if no context has been closed
+   */
+  public static TraceUsage lastUsage() {
+    for (Integer i = histories.size() - 1; i >= 0; i--) {
+      if (histories[i].getUsage() != null) {
+        return histories[i].getUsage();
+      }
+    }
+    return null;
   }
 
   /**
@@ -339,6 +385,7 @@ public with sharing class TraceFlow {
   private static void clear() {
     traces.clear();
     histories.clear();
+    startSnapshots.clear();
   }
 
   /**
