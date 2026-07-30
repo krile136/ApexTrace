@@ -43,7 +43,12 @@ public with sharing class TraceUsageTest {
     TraceUsage startPoint = TraceUsage.capture();
 
     // Act
-    insert new List<Account>{ new Account(Name = 'Usage Test 1'), new Account(Name = 'Usage Test 2') };
+    // Document supports no triggers or validation rules, so the DML can never be
+    // broken by consumer-org customization (framework tests run in consumer orgs).
+    insert new List<Document>{
+      new Document(Name = 'Usage Test 1', FolderId = UserInfo.getUserId()),
+      new Document(Name = 'Usage Test 2', FolderId = UserInfo.getUserId())
+    };
     TraceUsage usage = TraceUsage.capture().since(startPoint);
 
     // Assert
@@ -108,7 +113,7 @@ public with sharing class TraceUsageTest {
     // Arrange
     TraceUsage startPoint = TraceUsage.capture();
     List<User> users = [SELECT Id FROM User LIMIT 1];
-    insert new Account(Name = 'Usage Format Test');
+    insert new Document(Name = 'Usage Format Test', FolderId = UserInfo.getUserId());
     TraceUsage usage = TraceUsage.capture().since(startPoint);
 
     // Act
