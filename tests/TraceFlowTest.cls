@@ -74,6 +74,55 @@ public with sharing class TraceFlowTest {
   }
 
   @isTest
+  static void testContains_WhenTextExistsInEarlierHistory_ThenReturnTrue() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+    trace.log('first log message');
+    trace.log('second log message');
+    trace.finish('finished');
+
+    // Act / Assert - the matching entry is not the last one
+    Assert.isTrue(TraceFlow.contains('first log'));
+    Assert.isFalse(TraceFlow.lastHistoryContains('first log'));
+  }
+
+  @isTest
+  static void testContains_WhenTextDoesNotExist_ThenReturnFalse() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+    trace.log('some log message');
+    trace.finish();
+
+    // Act / Assert
+    Assert.isFalse(TraceFlow.contains('nonexistent'));
+  }
+
+  @isTest
+  static void testContains_WhenEmpty_ThenReturnFalse() {
+    // Arrange
+    TraceFlow.clear();
+
+    // Act / Assert
+    Assert.isFalse(TraceFlow.contains('anything'));
+  }
+
+  @isTest
+  static void testContains_WhenTextIsNull_ThenReturnFalse() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+    trace.finish('finished');
+
+    // Act / Assert
+    Assert.isFalse(TraceFlow.contains(null));
+  }
+
+  @isTest
   static void testLastUsage_WhenNoContextClosed_ThenReturnNull() {
     // Arrange
     TraceFlow.clear();

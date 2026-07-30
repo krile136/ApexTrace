@@ -110,6 +110,15 @@ public with sharing class TraceHistoryTest {
   }
 
   @isTest
+  static void testContainsText_WhenTextIsNull_ThenReturnFalse() {
+    // Arrange
+    TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Log, 'TestContext', 'This is a test message');
+
+    // Act / Assert
+    Assert.isFalse(history.containsText(null));
+  }
+
+  @isTest
   static void testSetUsage_WhenAttached_ThenGetUsageReturnsIt() {
     // Arrange
     TraceHistory history = new TraceHistory(TraceHistory.HistoryType.Finish, 'TestContext', 'result');
