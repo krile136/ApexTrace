@@ -297,6 +297,22 @@ public with sharing class TraceFlow {
   }
 
   /**
+   * @description Checks if any history entry contains the specified text
+   * Unlike lastHistoryContains, this searches the entire history,
+   * so assertions do not break when the order of entries changes.
+   * @param text The text to search for
+   * @return True if any history entry contains the text
+   */
+  public static Boolean contains(String text) {
+    for (TraceHistory history : histories) {
+      if (history.containsText(text)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * @description Gets the last history entry (instance method)
    * @return The last TraceHistory, or null if empty
    */

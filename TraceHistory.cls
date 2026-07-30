@@ -132,9 +132,9 @@ public with sharing class TraceHistory {
   /**
    * @description Checks if the message contains the specified text
    * @param text The text to search for in the message
-   * @return True if the message contains the text, false otherwise
+   * @return True if the message contains the text, false otherwise (also false if text is null)
    */
   public Boolean containsText(String text) {
-    return this.message != null && this.message.contains(text);
+    return text != null && this.message != null && this.message.contains(text);
   }
 }
