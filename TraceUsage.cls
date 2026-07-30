@@ -62,11 +62,24 @@ public with sharing class TraceUsage {
   }
 
   /**
+   * @description The governor counter source. Production reads System.Limits;
+   * tests inject a stub for deterministic, org-independent verification.
+   */
+  @TestVisible
+  private static ILimitsReader limitsReader = new LimitsReader();
+
+  /**
    * @description Captures the governor limit consumption of the transaction so far
    * @return A TraceUsage snapshot of the current consumption
    */
   public static TraceUsage capture() {
-    return new TraceUsage(Limits.getQueries(), Limits.getQueryRows(), Limits.getDmlStatements(), Limits.getDmlRows(), Limits.getCallouts());
+    return new TraceUsage(
+      limitsReader.getQueries(),
+      limitsReader.getQueryRows(),
+      limitsReader.getDmlStatements(),
+      limitsReader.getDmlRows(),
+      limitsReader.getCallouts()
+    );
   }
 
   /**
