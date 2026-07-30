@@ -5,10 +5,12 @@
         <members>TraceFlow</members>
         <members>TraceHistory</members>
         <members>TraceException</members>
+        <members>TraceUsage</members>
         <members>TraceTest</members>
         <members>TraceFlowTest</members>
         <members>TraceHistoryTest</members>
         <members>TraceExceptionTest</members>
+        <members>TraceUsageTest</members>
         <name>ApexClass</name>
     </types>
     <version>59.0</version>

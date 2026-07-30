@@ -7,7 +7,7 @@
 # <?xml version="1.0" encoding="UTF-8"?><Package xmlns="http://soap.sforce.com/2006/04/metadata"><version>59.0</version></Package>
 EMPTY_PACKAGE_XML = manifest/package-empty.xml
 
-.PHONY: install uninstall reinstall test test-trace test-traceflow test-tracehistory test-traceexception test-all coverage help
+.PHONY: install uninstall reinstall test test-trace test-traceflow test-tracehistory test-traceexception test-traceusage test-all coverage help
 
 # Default target - show help
 .DEFAULT_GOAL := help
@@ -24,6 +24,7 @@ help:
 	@echo "  make test-traceflow - Run TraceFlow tests only"
 	@echo "  make test-tracehistory - Run TraceHistory tests only"
 	@echo "  make test-traceexception - Run TraceException tests only"
+	@echo "  make test-traceusage - Run TraceUsage tests only"
 	@echo "  make test-all     - Run all tests with detailed output"
 	@echo "  make coverage     - Show code coverage report"
 	@echo "  make help         - Show this help message"
@@ -57,6 +58,7 @@ test: install
 		--class-names TraceFlowTest \
 		--class-names TraceExceptionTest \
 		--class-names TraceHistoryTest \
+		--class-names TraceUsageTest \
 		--code-coverage \
 		--wait 10 \
 		--result-format human
@@ -81,6 +83,11 @@ test-traceexception: install
 	@echo "Running TraceException tests..."
 	@sf apex run test --test-level RunSpecifiedTests --class-names TraceExceptionTest --code-coverage --synchronous
 
+# test-traceusage: Run TraceUsage tests only
+test-traceusage: install
+	@echo "Running TraceUsage tests..."
+	@sf apex run test --test-level RunSpecifiedTests --class-names TraceUsageTest --code-coverage --synchronous
+
 # test-all: Run all tests with detailed output and coverage
 test-all: install
 	@echo "Running all ApexTrace tests with detailed output..."
@@ -89,6 +96,7 @@ test-all: install
 		--class-names TraceFlowTest \
 		--class-names TraceExceptionTest \
 		--class-names TraceHistoryTest \
+		--class-names TraceUsageTest \
 		--code-coverage \
 		--wait 10 \
 		--result-format human \
@@ -99,4 +107,4 @@ test-all: install
 coverage:
 	@echo "Code Coverage Summary:"
 	@echo "======================"
-	@sf apex get test --test-run-id $(shell sf apex run test --class-names TraceTest --class-names TraceFlowTest --class-names TraceExceptionTest --class-names TraceHistoryTest --code-coverage --wait 10 --json | jq -r '.result.summary.testRunId') --code-coverage
+	@sf apex get test --test-run-id $(shell sf apex run test --class-names TraceTest --class-names TraceFlowTest --class-names TraceExceptionTest --class-names TraceHistoryTest --class-names TraceUsageTest --code-coverage --wait 10 --json | jq -r '.result.summary.testRunId') --code-coverage

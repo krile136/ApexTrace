@@ -123,6 +123,92 @@ public with sharing class TraceFlowTest {
   }
 
   @isTest
+  static void testLastUsage_WhenNoContextClosed_ThenReturnNull() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+
+    // Act / Assert - only a Start entry exists, no context has been closed yet
+    Assert.isNull(TraceFlow.lastUsage());
+  }
+
+  @isTest
+  static void testLastUsage_WhenContextFinished_ThenReturnsConsumption() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+    List<User> users = [SELECT Id FROM User LIMIT 1];
+    trace.finish('done');
+
+    // Act
+    TraceUsage usage = TraceFlow.lastUsage();
+
+    // Assert
+    Assert.isNotNull(usage);
+    Assert.areEqual(1, usage.getSoqlQueries());
+    Assert.areEqual(0, usage.getDmlStatements());
+    Assert.areEqual(usage, TraceFlow.lastHistory().getUsage());
+  }
+
+  @isTest
+  static void testLastUsage_WhenContextSkipped_ThenUsageIsAttached() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+    trace.skip('nothing to do');
+
+    // Act
+    TraceUsage usage = TraceFlow.lastUsage();
+
+    // Assert
+    Assert.isNotNull(usage);
+    Assert.areEqual(0, usage.getSoqlQueries());
+    Assert.areEqual(0, usage.getDmlStatements());
+  }
+
+  @isTest
+  static void testLastUsage_WhenNested_ThenParentIncludesChildConsumption() {
+    // Arrange
+    TraceFlow.clear();
+    Trace outerTrace = Trace.of('OuterContext');
+    outerTrace.start();
+    Trace innerTrace = Trace.of('InnerContext');
+    innerTrace.start();
+    List<User> innerUsers = [SELECT Id FROM User LIMIT 1];
+    innerTrace.finish();
+
+    // Act / Assert - inner context consumed 1 SOQL
+    Assert.areEqual(1, TraceFlow.lastUsage().getSoqlQueries());
+
+    List<User> outerUsers = [SELECT Id FROM User LIMIT 1];
+    outerTrace.finish();
+
+    // Act / Assert - outer includes the nested inner context's consumption
+    Assert.areEqual(2, TraceFlow.lastUsage().getSoqlQueries());
+  }
+
+  @isTest
+  static void testGetUsage_WhenStartOrLogEntry_ThenNull() {
+    // Arrange
+    TraceFlow.clear();
+    Trace trace = Trace.of('TestContext');
+    trace.start();
+    trace.log('a log message');
+    trace.finish();
+
+    // Act
+    List<TraceHistory> histories = TraceFlow.getAllHistories();
+
+    // Assert - only the closing entry carries usage
+    Assert.isNull(histories[0].getUsage());
+    Assert.isNull(histories[1].getUsage());
+    Assert.isNotNull(histories[2].getUsage());
+  }
+
+  @isTest
   static void testGetLastHistory_WhenEmpty_ThenReturnNull() {
     // Arrange
     TraceFlow flow = new TraceFlow();
