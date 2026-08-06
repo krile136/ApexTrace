@@ -44,9 +44,11 @@ public with sharing class TraceUsage {
   private final Integer dmlStatements;
   private final Integer dmlRows;
   private final Integer callouts;
+  private final Integer invocations;
 
   /**
-   * @description Private constructor holding metric values
+   * @description Private constructor holding metric values.
+   * Represents a single measured section, so invocations is 1.
    * @param soqlQueries The number of SOQL queries
    * @param soqlRows The number of rows returned by SOQL queries
    * @param dmlStatements The number of DML statements
@@ -54,11 +56,60 @@ public with sharing class TraceUsage {
    * @param callouts The number of callouts
    */
   private TraceUsage(Integer soqlQueries, Integer soqlRows, Integer dmlStatements, Integer dmlRows, Integer callouts) {
+    this(soqlQueries, soqlRows, dmlStatements, dmlRows, callouts, 1);
+  }
+
+  /**
+   * @description Private constructor for aggregates (usageOf sums)
+   * @param soqlQueries The number of SOQL queries
+   * @param soqlRows The number of rows returned by SOQL queries
+   * @param dmlStatements The number of DML statements
+   * @param dmlRows The number of rows processed by DML statements
+   * @param callouts The number of callouts
+   * @param invocations The number of closed contexts this usage aggregates
+   */
+  private TraceUsage(
+    Integer soqlQueries,
+    Integer soqlRows,
+    Integer dmlStatements,
+    Integer dmlRows,
+    Integer callouts,
+    Integer invocations
+  ) {
     this.soqlQueries = soqlQueries;
     this.soqlRows = soqlRows;
     this.dmlStatements = dmlStatements;
     this.dmlRows = dmlRows;
     this.callouts = callouts;
+    this.invocations = invocations;
+  }
+
+  /**
+   * @description An empty aggregate: zero consumption, zero invocations.
+   * The identity element for plus() — TraceFlow.usageOf starts from this, so
+   * "the context never ran" comes back as an assertable zero, not null.
+   * @return A TraceUsage with all metrics and invocations at 0
+   */
+  public static TraceUsage zero() {
+    return new TraceUsage(0, 0, 0, 0, 0, 0);
+  }
+
+  /**
+   * @description Metric-wise sum of two usages; invocations are summed too.
+   * Used by TraceFlow.usageOf to aggregate the exclusive consumption of every
+   * closed context that carries the same name.
+   * @param other The usage to add
+   * @return A new TraceUsage holding the sums
+   */
+  public TraceUsage plus(TraceUsage other) {
+    return new TraceUsage(
+      this.soqlQueries + other.soqlQueries,
+      this.soqlRows + other.soqlRows,
+      this.dmlStatements + other.dmlStatements,
+      this.dmlRows + other.dmlRows,
+      this.callouts + other.callouts,
+      this.invocations + other.invocations
+    );
   }
 
   /**
@@ -138,6 +189,17 @@ public with sharing class TraceUsage {
   }
 
   /**
+   * @description Gets the number of closed contexts this usage represents.
+   * For a single measured section (lastUsage(), usagesOf() entries) this is
+   * always 1; for a TraceFlow.usageOf aggregate it is the number of times the
+   * named context closed in the transaction (nested re-entries all count).
+   * @return The invocation count
+   */
+  public Integer getInvocations() {
+    return this.invocations;
+  }
+
+  /**
    * @description Asserts that the number of SOQL queries is at most the given maximum
    * @param max The allowed maximum
    * @return This TraceUsage instance (for chaining)
@@ -188,6 +250,19 @@ public with sharing class TraceUsage {
   }
 
   /**
+   * @description Asserts that the invocation count is at most the given maximum.
+   * On a TraceFlow.usageOf aggregate this pins how many times the named context
+   * ran in the transaction — the wiring check: an unexpected extra trigger path
+   * shows up here as a jump in invocations before any SOQL threshold trips.
+   * @param max The allowed maximum
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertInvocationsAtMost(Integer max) {
+    return assertAtMost('Invocations', this.invocations, max);
+  }
+
+  /**
    * @description Throws a TraceException with the full usage breakdown when actual exceeds max.
    * A TraceException (instead of Assert.fail) is used so that the failure is catchable
    * and therefore testable, while still failing the calling test.
@@ -207,10 +282,13 @@ public with sharing class TraceUsage {
   }
 
   /**
-   * @description Formats the usage as a single-line summary
+   * @description Formats the usage as a single-line summary.
+   * Aggregates (invocations != 1) prefix the invocation count; single-section
+   * usages keep the historical format so existing log output is unchanged.
    * @return A summary like 'SOQL: 3 (rows: 120), DML: 1 (rows: 30), Callouts: 0'
    */
   public String format() {
-    return 'SOQL: ' + this.soqlQueries + ' (rows: ' + this.soqlRows + '), DML: ' + this.dmlStatements + ' (rows: ' + this.dmlRows + '), Callouts: ' + this.callouts;
+    String prefix = this.invocations == 1 ? '' : 'Invocations: ' + this.invocations + ', ';
+    return prefix + 'SOQL: ' + this.soqlQueries + ' (rows: ' + this.soqlRows + '), DML: ' + this.dmlStatements + ' (rows: ' + this.dmlRows + '), Callouts: ' + this.callouts;
   }
 }

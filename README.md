@@ -257,6 +257,56 @@ Notes:
 - Assertion helpers throw a catchable `TraceException` (instead of `Assert.fail`) with the full usage breakdown, so failures are testable and self-explanatory.
 - Debug logs now show the cost of each section, e.g. `FINISH: QuoteRecalculation\nUsage: SOQL: 3 (rows: 120), DML: 1 (rows: 30), Callouts: 0`.
 
+### Per-context aggregation: usageOf()
+
+`lastUsage()` only returns the most recently closed context — when a trigger
+handler runs several usecases, that is just the last one. `usageOf(name)`
+aggregates **every** invocation of the named context in the transaction:
+
+```apex
+Test.startTest();
+insert opportunities;   // real DML → the whole trigger cascade fires
+Test.stopTest();
+
+// "runs exactly once per save" — an extra trigger wiring shows up as a jump
+// in invocations before any SOQL threshold trips
+TraceFlow.usageOf('RegenerateCollection').assertInvocationsAtMost(1);
+
+// bulk-safe: 30 records must not mean 30x the queries
+TraceFlow.usageOf('AggregateX02ToX01')
+  .assertInvocationsAtMost(4)
+  .assertSoqlQueriesAtMost(10);
+
+// per-invocation breakdown when you need it
+List<TraceUsage> each = TraceFlow.usagesOf('AggregateX02ToX01');
+```
+
+How to read a failure: **too many invocations → suspect the wiring** (the
+usecase is triggered from more entry points than intended); **invocations fine
+but consumption per invocation high → suspect the usecase's internals** (a
+query in a loop).
+
+Aggregation rules:
+
+- Consumption is summed as **exclusive** usage — each invocation's own
+  consumption minus its nested children — so nested re-entries of the same
+  context (trigger cascades) are not double-counted, and work done by
+  differently-named children is attributed to them, not to the parent.
+- `getInvocations()` counts every close, nesting included: "invoked 13 times
+  for 39 queries in total" reads off one object. On `lastUsage()` and
+  `usagesOf()` entries it is always `1`.
+- No match returns an assertable zero (0 invocations, zero consumption),
+  never null. Contexts that never closed (an exception unwound past them)
+  recorded no usage and are not counted.
+- Unlike raw `Limits` reads, `usageOf()` works after `Test.stopTest()`
+  (`stopTest()` rolls the governor counters back to their pre-`startTest()`
+  values, silently blinding any later `Limits.getQueries()` assert) — and it
+  is the only way to bound the consumption of **asynchronous** work (batch /
+  queueable), which only executes at `stopTest()`.
+- ⚠️ In pure unit tests where SOQL/DML is mocked, every usage is zero and any
+  `assert...AtMost` passes vacuously — usage assertions belong in integration
+  tests with real DML.
+
 ## 🎯 Use Cases
 
 ### 1. Service Layer

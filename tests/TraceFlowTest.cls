@@ -180,13 +180,13 @@ public with sharing class TraceFlowTest {
     List<User> innerUsers = [SELECT Id FROM User LIMIT 1];
     innerTrace.finish();
 
-    // Act / Assert - inner context consumed 1 SOQL
+    // Act / Assert - innerTrace context consumed 1 SOQL
     Assert.areEqual(1, TraceFlow.lastUsage().getSoqlQueries());
 
     List<User> outerUsers = [SELECT Id FROM User LIMIT 1];
     outerTrace.finish();
 
-    // Act / Assert - outer includes the nested inner context's consumption
+    // Act / Assert - outerTrace includes the nested innerTrace context's consumption
     Assert.areEqual(2, TraceFlow.lastUsage().getSoqlQueries());
   }
 
@@ -435,5 +435,200 @@ public with sharing class TraceFlowTest {
 
     // Assert
     Assert.areEqual(0, depth);
+  }
+
+  // ===============================================================================
+  // usageOf / usagesOf (issue #6): per-context-name aggregation.
+  // Consumption sums EXCLUSIVE usage (own minus nested children) so nested
+  // re-entries are not double-counted; invocations counts every close.
+  // Driven by a stub ILimitsReader — deterministic, no real SOQL/DML.
+  // ===============================================================================
+
+  private class StubLimitsReader implements ILimitsReader {
+    public Integer queries = 0;
+    public Integer queryRows = 0;
+    public Integer dmlStatements = 0;
+    public Integer dmlRows = 0;
+    public Integer callouts = 0;
+
+    public Integer getQueries() {
+      return this.queries;
+    }
+    public Integer getQueryRows() {
+      return this.queryRows;
+    }
+    public Integer getDmlStatements() {
+      return this.dmlStatements;
+    }
+    public Integer getDmlRows() {
+      return this.dmlRows;
+    }
+    public Integer getCallouts() {
+      return this.callouts;
+    }
+  }
+
+  @isTest
+  static void testUsageOf_WhenSameNameNested_ThenExclusiveSumAndAllInvocations() {
+    // Arrange - A(outerTrace) > A(midTrace) > A(innerTrace), each consuming 3 queries of its own.
+    // Inclusive diffs are 9 / 6 / 3 — the naive sum (18) double-counts; the
+    // exclusive sum is 9 with 3 invocations.
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace outerTrace = Trace.of('UsecaseA');
+    Trace midTrace = Trace.of('UsecaseA');
+    Trace innerTrace = Trace.of('UsecaseA');
+    outerTrace.start();
+    stub.queries += 3;
+    midTrace.start();
+    stub.queries += 3;
+    innerTrace.start();
+    stub.queries += 3;
+    innerTrace.finish();
+    midTrace.finish();
+    outerTrace.finish();
+
+    // Act
+    TraceUsage usage = TraceFlow.usageOf('UsecaseA');
+
+    // Assert
+    Assert.areEqual(3, usage.getInvocations(), 'Nested re-entries must all be counted.');
+    Assert.areEqual(9, usage.getSoqlQueries(), 'Exclusive sum must not double-count nesting.');
+  }
+
+  @isTest
+  static void testUsageOf_WhenDifferentNameNested_ThenConsumptionAttributedByName() {
+    // Arrange - A consumes 2 of its own; B (nested in A) consumes 5
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace a = Trace.of('UsecaseA');
+    Trace b = Trace.of('UsecaseB');
+    a.start();
+    stub.queries += 2;
+    b.start();
+    stub.queries += 5;
+    b.finish();
+    a.finish();
+
+    // Assert - B's consumption belongs to B, not to A (A inclusive would be 7)
+    Assert.areEqual(2, TraceFlow.usageOf('UsecaseA').getSoqlQueries());
+    Assert.areEqual(5, TraceFlow.usageOf('UsecaseB').getSoqlQueries());
+    Assert.areEqual(1, TraceFlow.usageOf('UsecaseA').getInvocations());
+  }
+
+  @isTest
+  static void testUsageOf_WhenNoMatch_ThenAssertableZero() {
+    // Arrange
+    TraceFlow.clear();
+
+    // Act
+    TraceUsage usage = TraceFlow.usageOf('NeverRan');
+
+    // Assert - zero object, chainable, never null
+    Assert.areEqual(0, usage.getInvocations());
+    Assert.areEqual(0, usage.getSoqlQueries());
+    usage.assertInvocationsAtMost(0).assertSoqlQueriesAtMost(0);
+  }
+
+  @isTest
+  static void testUsageOf_WhenNested_ThenLastUsageStillReturnsOuterInclusive() {
+    // Arrange - backward compatibility: lastUsage() keeps returning the most
+    // recently closed context's INCLUSIVE usage (outerTrace includes the child)
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace outerTrace = Trace.of('UsecaseA');
+    Trace innerTrace = Trace.of('UsecaseA');
+    outerTrace.start();
+    stub.queries += 3;
+    innerTrace.start();
+    stub.queries += 3;
+    innerTrace.finish();
+    outerTrace.finish();
+
+    // Assert
+    Assert.areEqual(6, TraceFlow.lastUsage().getSoqlQueries(), 'lastUsage stays inclusive.');
+    Assert.areEqual(1, TraceFlow.lastUsage().getInvocations(), 'A single section reports 1.');
+  }
+
+  @isTest
+  static void testUsagesOf_WhenNested_ThenPerInvocationBreakdownMatchesInvocations() {
+    // Arrange - same shape as the exclusive-sum test
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace outerTrace = Trace.of('UsecaseA');
+    Trace innerTrace = Trace.of('UsecaseA');
+    outerTrace.start();
+    stub.queries += 4;
+    innerTrace.start();
+    stub.queries += 3;
+    innerTrace.finish();
+    outerTrace.finish();
+
+    // Act
+    List<TraceUsage> usages = TraceFlow.usagesOf('UsecaseA');
+
+    // Assert - innermost closes first; each entry is exclusive with invocations 1
+    Assert.areEqual(TraceFlow.usageOf('UsecaseA').getInvocations(), usages.size());
+    Assert.areEqual(3, usages[0].getSoqlQueries(), 'Inner exclusive.');
+    Assert.areEqual(4, usages[1].getSoqlQueries(), 'Outer exclusive (child subtracted).');
+    Assert.areEqual(1, usages[0].getInvocations());
+  }
+
+  @isTest
+  static void testUsageOf_WhenContextNeverClosed_ThenNotCountedAndNoCrash() {
+    // Arrange - the outerTrace context never closes (as after an unwinding exception);
+    // only the closed innerTrace invocation is measurable
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace outerTrace = Trace.of('UsecaseA');
+    Trace innerTrace = Trace.of('UsecaseA');
+    outerTrace.start();
+    stub.queries += 2;
+    innerTrace.start();
+    stub.queries += 3;
+    innerTrace.finish();
+    // outerTrace is left open on purpose
+
+    // Act
+    TraceUsage usage = TraceFlow.usageOf('UsecaseA');
+
+    // Assert
+    Assert.areEqual(1, usage.getInvocations(), 'Unclosed contexts recorded no usage and are not counted.');
+    Assert.areEqual(3, usage.getSoqlQueries());
+    TraceFlow.clear(); // do not leak the open context into other tests
+  }
+
+  @isTest
+  static void testAssertInvocationsAtMost_WhenExceeded_ThenThrowWithBreakdown() {
+    // Arrange
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace first = Trace.of('UsecaseA');
+    first.start();
+    first.finish();
+    Trace second = Trace.of('UsecaseA');
+    second.start();
+    second.finish();
+
+    // Act & Assert
+    try {
+      TraceFlow.usageOf('UsecaseA').assertInvocationsAtMost(1);
+      Assert.fail('Expected TraceException to be thrown');
+    } catch (TraceException e) {
+      Assert.isTrue(e.getMessage().contains('Invocations'), e.getMessage());
+      Assert.isTrue(e.getMessage().contains('2'), 'Message must carry the actual count: ' + e.getMessage());
+    }
   }
 }
