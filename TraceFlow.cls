@@ -264,6 +264,76 @@ public with sharing class TraceFlow {
   }
 
   /**
+   * @description Aggregates the governor usage of every closed context with the
+   * given name in this transaction (issue #6).
+   *
+   * Consumption is summed as EXCLUSIVE usage — each context's own consumption
+   * minus its nested children — so nested re-entries of the same name are not
+   * double-counted, and consumption of differently-named children is attributed
+   * to them, not to this name. Invocations counts every close, nesting included:
+   * "invoked 13 times for 39 queries in total" reads off one object.
+   *
+   * When no context with the name has closed, an assertable zero (0 invocations,
+   * zero consumption) is returned, never null. Contexts that never closed
+   * (e.g. an exception unwound past them) recorded no usage and are not counted.
+   *
+   * ```
+   * TraceFlow.usageOf('集金オブジェクトの再生成')
+   *   .assertInvocationsAtMost(1)
+   *   .assertSoqlQueriesAtMost(10);
+   * ```
+   *
+   * @param contextName The context name to aggregate
+   * @return The aggregated TraceUsage (never null)
+   */
+  public static TraceUsage usageOf(String contextName) {
+    TraceUsage total = TraceUsage.zero();
+    for (TraceUsage exclusive : usagesOf(contextName)) {
+      total = total.plus(exclusive);
+    }
+    return total;
+  }
+
+  /**
+   * @description Returns the per-invocation EXCLUSIVE usage of every closed
+   * context with the given name, in the order they closed (innermost first for
+   * nested re-entries). The aggregate usageOf() is the primary API; this is the
+   * escape hatch when the per-call breakdown matters.
+   * @param contextName The context name to collect
+   * @return One TraceUsage per closed context (empty list when none closed)
+   */
+  public static List<TraceUsage> usagesOf(String contextName) {
+    // standard profiler walk: Start pushes a frame, a close pops it;
+    // exclusive = own inclusive diff - sum of the direct children's inclusive diffs
+    List<TraceUsage> result = new List<TraceUsage>();
+    List<TraceUsage> childrenSums = new List<TraceUsage>();
+    for (TraceHistory history : histories) {
+      if (history.isStart()) {
+        childrenSums.add(TraceUsage.zero());
+        continue;
+      }
+      if (!history.isFinish() && !history.isSkip() && !history.isAbort()) {
+        continue; // Log entries do not affect nesting
+      }
+      if (childrenSums.isEmpty()) {
+        continue; // defensive: a close without a matching Start
+      }
+      TraceUsage childrenSum = childrenSums.remove(childrenSums.size() - 1);
+      TraceUsage inclusive = history.getUsage();
+      if (inclusive == null) {
+        continue; // closed without a start snapshot — nothing measurable
+      }
+      if (!childrenSums.isEmpty()) {
+        childrenSums[childrenSums.size() - 1] = childrenSums[childrenSums.size() - 1].plus(inclusive);
+      }
+      if (history.getContextName() == contextName) {
+        result.add(inclusive.since(childrenSum));
+      }
+    }
+    return result;
+  }
+
+  /**
    * @description Returns the last history entry
    * @return The last TraceHistory, or null if empty
    */
