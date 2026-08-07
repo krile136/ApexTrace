@@ -238,6 +238,12 @@ TraceFlow.lastUsage()
   .assertSoqlQueriesAtMost(3)
   .assertDmlStatementsAtMost(1);
 
+// Every assert takes an optional reason — printed in the failure message,
+// right where the person about to raise or delete the threshold reads it
+TraceFlow.usageOf('QuoteRecalculation')
+  .assertInvocationsAtMost(6, 'measured 5 on a 201-record insert; a jump means an extra trigger wiring')
+  .assertSoqlQueriesAtMost(15, 'must not scale with record count');
+
 // Or inspect the raw numbers
 TraceUsage usage = TraceFlow.lastUsage();
 System.debug(usage.getSoqlQueries());   // SOQL queries issued
@@ -255,6 +261,8 @@ Notes:
 - Only deterministic metrics are tracked (SOQL queries / SOQL rows / DML statements / DML rows / callouts). CPU time and heap are intentionally excluded because they fluctuate between runs.
 - A parent context's usage includes its nested children (everything consumed between start and close).
 - Assertion helpers throw a catchable `TraceException` (instead of `Assert.fail`) with the full usage breakdown, so failures are testable and self-explanatory.
+- `lastUsage()` guards against ambiguity: in test execution it throws when two or more contexts closed at the same level (a handler that ran several usecases — `lastUsage()` would silently measure only the last one), listing the candidates to paste into `usageOf(...)`. Production is never affected.
+- Consumption asserts (`assertSoqlQueriesAtMost` etc.) on a context that **never ran** (`usageOf` with no match, invocations = 0) throw instead of passing vacuously — a typo'd context name, the wrong test layer, or missing wiring all surface immediately. Asserting that a context does *not* run stays legitimate: `assertInvocationsAtMost(0)`.
 - Debug logs now show the cost of each section, e.g. `FINISH: QuoteRecalculation\nUsage: SOQL: 3 (rows: 120), DML: 1 (rows: 30), Callouts: 0`.
 
 ### Per-context aggregation: usageOf()
@@ -295,9 +303,11 @@ Aggregation rules:
 - `getInvocations()` counts every close, nesting included: "invoked 13 times
   for 39 queries in total" reads off one object. On `lastUsage()` and
   `usagesOf()` entries it is always `1`.
-- No match returns an assertable zero (0 invocations, zero consumption),
-  never null. Contexts that never closed (an exception unwound past them)
-  recorded no usage and are not counted.
+- No match returns a zero object (0 invocations), never null. Invocation
+  asserts work on it (`assertInvocationsAtMost(0)` = "must not run"); consumption
+  asserts throw, because bounding the consumption of something that never ran is
+  an unfounded claim. Contexts that never closed (an exception unwound past
+  them) recorded no usage and are not counted.
 - Unlike raw `Limits` reads, `usageOf()` works after `Test.stopTest()`
   (`stopTest()` rolls the governor counters back to their pre-`startTest()`
   values, silently blinding any later `Limits.getQueries()` assert) — and it

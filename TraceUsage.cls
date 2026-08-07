@@ -89,6 +89,8 @@ public with sharing class TraceUsage {
    * The identity element for plus() — TraceFlow.usageOf starts from this, so
    * "the context never ran" comes back as an assertable zero, not null.
    * @return A TraceUsage with all metrics and invocations at 0
+   *
+   * @internal Aggregation primitive for TraceFlow.usageOf. Not part of the consumer API.
    */
   public static TraceUsage zero() {
     return new TraceUsage(0, 0, 0, 0, 0, 0);
@@ -100,6 +102,8 @@ public with sharing class TraceUsage {
    * closed context that carries the same name.
    * @param other The usage to add
    * @return A new TraceUsage holding the sums
+   *
+   * @internal Aggregation primitive for TraceFlow.usageOf. Not part of the consumer API.
    */
   public TraceUsage plus(TraceUsage other) {
     return new TraceUsage(
@@ -122,6 +126,8 @@ public with sharing class TraceUsage {
   /**
    * @description Captures the governor limit consumption of the transaction so far
    * @return A TraceUsage snapshot of the current consumption
+   *
+   * @internal Called by TraceFlow to snapshot counters. Not part of the consumer API.
    */
   public static TraceUsage capture() {
     return new TraceUsage(
@@ -137,6 +143,8 @@ public with sharing class TraceUsage {
    * @description Calculates the consumption between an earlier snapshot and this one
    * @param startPoint The snapshot taken at the start of the section
    * @return A TraceUsage representing what the section consumed
+   *
+   * @internal Called by TraceFlow to compute section diffs. Not part of the consumer API.
    */
   public TraceUsage since(TraceUsage startPoint) {
     return new TraceUsage(
@@ -206,7 +214,23 @@ public with sharing class TraceUsage {
    * @throws TraceException If the actual count exceeds max
    */
   public TraceUsage assertSoqlQueriesAtMost(Integer max) {
-    return assertAtMost('SOQL queries', this.soqlQueries, max);
+    return assertSoqlQueriesAtMost(max, null);
+  }
+
+  /**
+   * @description Same as assertSoqlQueriesAtMost(max), carrying a reason that is printed in
+   * the failure message (before the numbers). Put the "why" of the threshold
+   * here — e.g. the measured baseline and what a jump would mean — so the
+   * person who sees the red knows what the guard protects before deciding to
+   * raise or delete it.
+   * @param max The allowed maximum
+   * @param reason Shown as 'Reason: ...' in the failure message (null to omit)
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertSoqlQueriesAtMost(Integer max, String reason) {
+    assertMeasured('SOQL queries');
+    return assertAtMost('SOQL queries', this.soqlQueries, max, reason);
   }
 
   /**
@@ -216,7 +240,23 @@ public with sharing class TraceUsage {
    * @throws TraceException If the actual count exceeds max
    */
   public TraceUsage assertSoqlRowsAtMost(Integer max) {
-    return assertAtMost('SOQL rows', this.soqlRows, max);
+    return assertSoqlRowsAtMost(max, null);
+  }
+
+  /**
+   * @description Same as assertSoqlRowsAtMost(max), carrying a reason that is printed in
+   * the failure message (before the numbers). Put the "why" of the threshold
+   * here — e.g. the measured baseline and what a jump would mean — so the
+   * person who sees the red knows what the guard protects before deciding to
+   * raise or delete it.
+   * @param max The allowed maximum
+   * @param reason Shown as 'Reason: ...' in the failure message (null to omit)
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertSoqlRowsAtMost(Integer max, String reason) {
+    assertMeasured('SOQL rows');
+    return assertAtMost('SOQL rows', this.soqlRows, max, reason);
   }
 
   /**
@@ -226,7 +266,23 @@ public with sharing class TraceUsage {
    * @throws TraceException If the actual count exceeds max
    */
   public TraceUsage assertDmlStatementsAtMost(Integer max) {
-    return assertAtMost('DML statements', this.dmlStatements, max);
+    return assertDmlStatementsAtMost(max, null);
+  }
+
+  /**
+   * @description Same as assertDmlStatementsAtMost(max), carrying a reason that is printed in
+   * the failure message (before the numbers). Put the "why" of the threshold
+   * here — e.g. the measured baseline and what a jump would mean — so the
+   * person who sees the red knows what the guard protects before deciding to
+   * raise or delete it.
+   * @param max The allowed maximum
+   * @param reason Shown as 'Reason: ...' in the failure message (null to omit)
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertDmlStatementsAtMost(Integer max, String reason) {
+    assertMeasured('DML statements');
+    return assertAtMost('DML statements', this.dmlStatements, max, reason);
   }
 
   /**
@@ -236,7 +292,23 @@ public with sharing class TraceUsage {
    * @throws TraceException If the actual count exceeds max
    */
   public TraceUsage assertDmlRowsAtMost(Integer max) {
-    return assertAtMost('DML rows', this.dmlRows, max);
+    return assertDmlRowsAtMost(max, null);
+  }
+
+  /**
+   * @description Same as assertDmlRowsAtMost(max), carrying a reason that is printed in
+   * the failure message (before the numbers). Put the "why" of the threshold
+   * here — e.g. the measured baseline and what a jump would mean — so the
+   * person who sees the red knows what the guard protects before deciding to
+   * raise or delete it.
+   * @param max The allowed maximum
+   * @param reason Shown as 'Reason: ...' in the failure message (null to omit)
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertDmlRowsAtMost(Integer max, String reason) {
+    assertMeasured('DML rows');
+    return assertAtMost('DML rows', this.dmlRows, max, reason);
   }
 
   /**
@@ -246,7 +318,23 @@ public with sharing class TraceUsage {
    * @throws TraceException If the actual count exceeds max
    */
   public TraceUsage assertCalloutsAtMost(Integer max) {
-    return assertAtMost('Callouts', this.callouts, max);
+    return assertCalloutsAtMost(max, null);
+  }
+
+  /**
+   * @description Same as assertCalloutsAtMost(max), carrying a reason that is printed in
+   * the failure message (before the numbers). Put the "why" of the threshold
+   * here — e.g. the measured baseline and what a jump would mean — so the
+   * person who sees the red knows what the guard protects before deciding to
+   * raise or delete it.
+   * @param max The allowed maximum
+   * @param reason Shown as 'Reason: ...' in the failure message (null to omit)
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertCalloutsAtMost(Integer max, String reason) {
+    assertMeasured('Callouts');
+    return assertAtMost('Callouts', this.callouts, max, reason);
   }
 
   /**
@@ -259,7 +347,43 @@ public with sharing class TraceUsage {
    * @throws TraceException If the actual count exceeds max
    */
   public TraceUsage assertInvocationsAtMost(Integer max) {
-    return assertAtMost('Invocations', this.invocations, max);
+    return assertInvocationsAtMost(max, null);
+  }
+
+  /**
+   * @description Same as assertInvocationsAtMost(max), carrying a reason that is printed in
+   * the failure message (before the numbers). Put the "why" of the threshold
+   * here — e.g. the measured baseline and what a jump would mean — so the
+   * person who sees the red knows what the guard protects before deciding to
+   * raise or delete it.
+   * @param max The allowed maximum
+   * @param reason Shown as 'Reason: ...' in the failure message (null to omit)
+   * @return This TraceUsage instance (for chaining)
+   * @throws TraceException If the actual count exceeds max
+   */
+  public TraceUsage assertInvocationsAtMost(Integer max, String reason) {
+    return assertAtMost('Invocations', this.invocations, max, reason);
+  }
+
+  /**
+   * @description Rejects consumption assertions on a usage that measured nothing.
+   * Writing assertSoqlQueriesAtMost(n) declares "this context ran, bounded by n" —
+   * when the named context never closed in the transaction (invocations = 0, the
+   * usageOf no-match result), that claim is unfounded and the assert would pass
+   * vacuously: a typo'd context name, the wrong test layer, or missing wiring
+   * all stay green. Invocation asserts are exempt on purpose —
+   * assertInvocationsAtMost(0) is the legitimate way to claim "does not run".
+   * @param metric The metric about to be asserted
+   * @throws TraceException When invocations is 0
+   */
+  private void assertMeasured(String metric) {
+    if (this.invocations == 0) {
+      throw new TraceException(
+        'Usage assertion on ' + metric + ' is unfounded: no context with this name closed in the transaction (invocations = 0).' +
+          '\nCheck the context name for typos, the test layer, and the wiring.' +
+          '\nTo assert that the context does not run, use assertInvocationsAtMost(0).'
+      );
+    }
   }
 
   /**
@@ -272,10 +396,14 @@ public with sharing class TraceUsage {
    * @return This TraceUsage instance (for chaining)
    * @throws TraceException If actual exceeds max
    */
-  private TraceUsage assertAtMost(String metric, Integer actual, Integer max) {
+  private TraceUsage assertAtMost(String metric, Integer actual, Integer max, String reason) {
     if (actual > max) {
+      // the Reason line comes BEFORE the numbers: the person reading this failure
+      // is about to raise the limit or delete the assert — what the guard protects
+      // must reach them before the counts do
+      String reasonLine = String.isBlank(reason) ? '' : '\nReason: ' + reason;
       throw new TraceException(
-        'Usage assertion failed: ' + metric + ' is ' + actual + ', exceeding the allowed maximum of ' + max + '.\nActual usage: ' + format()
+        'Usage assertion failed: ' + metric + ' is ' + actual + ', exceeding the allowed maximum of ' + max + '.' + reasonLine + '\nActual usage: ' + format()
       );
     }
     return this;
