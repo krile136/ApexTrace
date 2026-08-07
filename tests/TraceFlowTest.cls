@@ -209,18 +209,6 @@ public with sharing class TraceFlowTest {
   }
 
   @isTest
-  static void testGetLastHistory_WhenEmpty_ThenReturnNull() {
-    // Arrange
-    TraceFlow flow = new TraceFlow();
-
-    // Act
-    TraceHistory history = flow.getLastHistory();
-
-    // Assert
-    Assert.isNull(history);
-  }
-
-  @isTest
   static void testEnsureContext_WhenRelaxedModeAndContextNotFound_ThenThrowException() {
     // Arrange
     TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
@@ -521,17 +509,27 @@ public with sharing class TraceFlowTest {
   }
 
   @isTest
-  static void testUsageOf_WhenNoMatch_ThenAssertableZero() {
+  static void testUsageOf_WhenNoMatch_ThenZeroObjectAndConsumptionAssertsRejected() {
     // Arrange
     TraceFlow.clear();
 
     // Act
     TraceUsage usage = TraceFlow.usageOf('NeverRan');
 
-    // Assert - zero object, chainable, never null
+    // Assert - zero object, never null; asserting the context does not run is legitimate
     Assert.areEqual(0, usage.getInvocations());
     Assert.areEqual(0, usage.getSoqlQueries());
-    usage.assertInvocationsAtMost(0).assertSoqlQueriesAtMost(0);
+    usage.assertInvocationsAtMost(0);
+
+    // Assert - a consumption assert on a context that never ran is unfounded:
+    // it would pass vacuously (typo'd name / wrong test layer / missing wiring)
+    try {
+      usage.assertSoqlQueriesAtMost(5);
+      Assert.fail('Expected TraceException to be thrown');
+    } catch (TraceException e) {
+      Assert.isTrue(e.getMessage().contains('invocations = 0'), e.getMessage());
+      Assert.isTrue(e.getMessage().contains('assertInvocationsAtMost(0)'), 'Must guide the not-run assertion: ' + e.getMessage());
+    }
   }
 
   @isTest
@@ -630,5 +628,133 @@ public with sharing class TraceFlowTest {
       Assert.isTrue(e.getMessage().contains('Invocations'), e.getMessage());
       Assert.isTrue(e.getMessage().contains('2'), 'Message must carry the actual count: ' + e.getMessage());
     }
+  }
+
+  // ===============================================================================
+  // lastUsage() ambiguity guard + assert reason overloads (issue #8)
+  // ===============================================================================
+
+  @isTest
+  static void testLastUsage_WhenSeveralContextsCloseAtSameLevel_ThenThrowAmbiguous() {
+    // Arrange - the trigger-handler shape: the test's own trace stays open while
+    // three usecases open and close at the same level
+    TraceFlow.clear();
+    Trace outerTrace = Trace.of('TestWrapper');
+    outerTrace.start();
+    Trace u1 = Trace.of('UsecaseA');
+    u1.start();
+    u1.finish();
+    Trace u2 = Trace.of('UsecaseB');
+    u2.start();
+    u2.finish();
+    Trace u3 = Trace.of('UsecaseC');
+    u3.start();
+    u3.finish();
+
+    // Act & Assert - Strict (test execution) rejects the ambiguous read and
+    // lists the candidates for a copy-paste into usageOf()
+    try {
+      TraceFlow.lastUsage();
+      Assert.fail('Expected TraceException to be thrown');
+    } catch (TraceException e) {
+      Assert.isTrue(e.getMessage().contains('ambiguous'), e.getMessage());
+      Assert.isTrue(e.getMessage().contains('UsecaseA'), e.getMessage());
+      Assert.isTrue(e.getMessage().contains('UsecaseC'), e.getMessage());
+      Assert.isTrue(e.getMessage().contains('usageOf'), 'Must guide to usageOf: ' + e.getMessage());
+    }
+    TraceFlow.clear(); // do not leak the open wrapper into other tests
+  }
+
+  @isTest
+  static void testLastUsage_WhenNestedOnly_ThenNotAmbiguous() {
+    // Arrange - A calls B: two contexts close, but nesting is not ambiguity —
+    // the outermost close (A) is the natural target
+    TraceFlow.clear();
+    Trace a = Trace.of('UsecaseA');
+    a.start();
+    Trace b = Trace.of('UsecaseB');
+    b.start();
+    b.finish();
+    a.finish();
+
+    // Act & Assert - no exception, and lastUsage is A's (inclusive) usage
+    Assert.areEqual(TraceFlow.usageOf('UsecaseB').getSoqlQueries(), 0);
+    Assert.isNotNull(TraceFlow.lastUsage());
+  }
+
+  @isTest
+  static void testLastUsage_WhenAmbiguousInRelaxedMode_ThenNoException() {
+    // Arrange - production never throws from this guard
+    TraceFlow.clear();
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace u1 = Trace.of('UsecaseA');
+    u1.start();
+    u1.finish();
+    Trace u2 = Trace.of('UsecaseB');
+    u2.start();
+    u2.finish();
+
+    // Act & Assert
+    Assert.isNotNull(TraceFlow.lastUsage());
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Strict);
+  }
+
+  @isTest
+  static void testAssertReason_WhenExceeded_ThenReasonPrintedBeforeNumbers() {
+    // Arrange
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+    Trace tr = Trace.of('UsecaseA');
+    tr.start();
+    stub.queries += 3;
+    tr.finish();
+
+    // Act & Assert
+    try {
+      TraceFlow.usageOf('UsecaseA').assertSoqlQueriesAtMost(1, '201件insert時の実測は5。増えた場合は配線が増えた可能性があります');
+      Assert.fail('Expected TraceException to be thrown');
+    } catch (TraceException e) {
+      String msg = e.getMessage();
+      Assert.isTrue(msg.contains('Reason: 201件insert時の実測は5'), msg);
+      Assert.isTrue(
+        msg.indexOf('Reason:') < msg.indexOf('Actual usage:'),
+        'The reason must come before the numbers: ' + msg
+      );
+    }
+  }
+
+  @isTest
+  static void testAssertReason_WhenNullReason_ThenMessageUnchanged() {
+    // Arrange - the 1-arg asserts delegate with a null reason: no Reason line
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+    Trace tr = Trace.of('UsecaseA');
+    tr.start();
+    stub.queries += 3;
+    tr.finish();
+
+    // Act & Assert
+    try {
+      TraceFlow.usageOf('UsecaseA').assertSoqlQueriesAtMost(1);
+      Assert.fail('Expected TraceException to be thrown');
+    } catch (TraceException e) {
+      Assert.isFalse(e.getMessage().contains('Reason:'), e.getMessage());
+    }
+  }
+
+  @isTest
+  static void testGetAllHistories_StaysPublicForTelemetry() {
+    // Arrange - regression guard: getAllHistories() is the only production
+    // entry point for telemetry (enumerating every context of a transaction);
+    // this call compiling and returning is the assertion
+    TraceFlow.clear();
+    Trace tr = Trace.of('UsecaseA');
+    tr.start();
+    tr.finish();
+
+    // Act & Assert
+    Assert.areEqual(2, TraceFlow.getAllHistories().size(), 'Start + Finish entries.');
   }
 }

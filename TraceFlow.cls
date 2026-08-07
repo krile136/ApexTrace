@@ -70,6 +70,8 @@ public with sharing class TraceFlow {
    * @param expectedContextName The expected context name
    * @param expectedHistoryType The expected history type
    * @throws TraceException If context validation fails
+   *
+   * @internal Called by Trace to validate lifecycle order. Not part of the consumer API.
    */
   public static void ensureContext(String expectedContextName, TraceHistory.HistoryType expectedHistoryType) {
     if (isStrict()) {
@@ -103,6 +105,8 @@ public with sharing class TraceFlow {
   /**
    * @description Adds a Trace context to the Stack
    * @param newTrace The Trace to push (does nothing if null)
+   *
+   * @internal Called by Trace.start(). Consumers use Trace.of(...).start().
    */
   public static void push(Trace newTrace) {
     if (newTrace == null) {
@@ -119,6 +123,8 @@ public with sharing class TraceFlow {
   /**
    * @description Logs a message in the current context
    * @param message The message to log
+   *
+   * @internal Called by Trace.log(). Consumers use their Trace instance: t.log(...).
    */
   public static void log(String message) {
     String contextName = currentContextName();
@@ -129,6 +135,8 @@ public with sharing class TraceFlow {
 
   /**
    * @description Skips the current context without a reason
+   *
+   * @internal Called by Trace.skip(). Consumers use their Trace instance: t.skip().
    */
   public static void skip() {
     String contextName = currentContextName();
@@ -142,6 +150,8 @@ public with sharing class TraceFlow {
   /**
    * @description Skips the current context with a reason
    * @param reason The reason for skipping
+   *
+   * @internal Called by Trace.skip(reason). Consumers use their Trace instance: t.skip(reason).
    */
   public static void skip(String reason) {
     String contextName = currentContextName();
@@ -154,6 +164,8 @@ public with sharing class TraceFlow {
 
   /**
    * @description Finishes the current context without a result
+   *
+   * @internal Called by Trace.finish(). Consumers use their Trace instance: t.finish().
    */
   public static void finish() {
     String contextName = currentContextName();
@@ -167,6 +179,8 @@ public with sharing class TraceFlow {
   /**
    * @description Finishes the current context with a result message
    * @param result The result message
+   *
+   * @internal Called by Trace.finish(result). Consumers use their Trace instance: t.finish(result).
    */
   public static void finish(String result) {
     String contextName = currentContextName();
@@ -179,6 +193,8 @@ public with sharing class TraceFlow {
 
   /**
    * @description Aborts the current context without a reason
+   *
+   * @internal Called by Trace.abort(). Consumers use their Trace instance: t.abort().
    */
   public static void abort() {
     String contextName = currentContextName();
@@ -192,6 +208,8 @@ public with sharing class TraceFlow {
   /**
    * @description Aborts the current context with a reason
    * @param result The reason for aborting
+   *
+   * @internal Called by Trace.abort(reason). Consumers use their Trace instance: t.abort(reason).
    */
   public static void abort(String result) {
     String contextName = currentContextName();
@@ -205,6 +223,8 @@ public with sharing class TraceFlow {
   /**
    * @description Returns the currently active Trace context name
    * @return The contextName of the top Trace in the Stack, or null if empty
+   *
+   * @internal Used by Trace and the context validation. Not part of the consumer API.
    */
   public static String currentContextName() {
     if (traces.isEmpty()) {
@@ -217,6 +237,8 @@ public with sharing class TraceFlow {
    * @description Removes the current Trace context from the Stack
    * Intended to be called only from Trace.finish().
    * Does nothing if the Stack is empty.
+   *
+   * @internal Stack maintenance for Trace. Not part of the consumer API.
    */
   public static void pop() {
     if (traces.isEmpty()) {
@@ -252,15 +274,69 @@ public with sharing class TraceFlow {
    * @description Gets the governor usage of the most recently closed context.
    * A context's usage includes everything consumed between its start and its
    * close, so a parent context's usage includes its nested children.
+   *
+   * In Strict mode (test execution) a TraceException is thrown when the call
+   * is ambiguous — two or more contexts closed at the same (shallowest) level,
+   * e.g. a trigger handler that ran several usecases. lastUsage() would hand
+   * back only the last one, silently measuring the wrong thing; the exception
+   * lists the candidates so the fix is a copy-paste into usageOf(contextName).
+   * In Relaxed mode (production) the guard is skipped entirely.
+   *
    * @return The TraceUsage recorded on the most recent Skip / Abort / Finish entry, or null if no context has been closed
+   * @throws TraceException In Strict mode when multiple contexts closed at the same level
    */
   public static TraceUsage lastUsage() {
+    if (isStrict()) {
+      assertLastUsageNotAmbiguous();
+    }
     for (Integer i = histories.size() - 1; i >= 0; i--) {
       if (histories[i].getUsage() != null) {
         return histories[i].getUsage();
       }
     }
     return null;
+  }
+
+  /**
+   * @description Throws when two or more contexts closed at the shallowest close
+   * depth. Nesting alone is not ambiguous (the outermost close is the natural
+   * target), and the depth baseline is relative — a test wrapping everything in
+   * its own Trace.of(...) keeps the stack above zero, so "how many times the
+   * stack emptied" would misjudge; the shallowest observed close depth is the
+   * correct baseline.
+   * @throws TraceException When the most recent usage is ambiguous
+   */
+  private static void assertLastUsageNotAmbiguous() {
+    Integer depth = 0;
+    Integer minDepth = null;
+    List<String> candidates = new List<String>();
+    for (TraceHistory history : histories) {
+      if (history.isStart()) {
+        depth++;
+        continue;
+      }
+      if (!history.isFinish() && !history.isSkip() && !history.isAbort()) {
+        continue; // Log entries do not affect nesting
+      }
+      if (depth > 0) {
+        depth--;
+      }
+      if (minDepth == null || depth < minDepth) {
+        minDepth = depth;
+        candidates = new List<String>{ history.getContextName() };
+      } else if (depth == minDepth) {
+        candidates.add(history.getContextName());
+      }
+    }
+    if (candidates.size() >= 2) {
+      throw new TraceException(
+        'lastUsage() is ambiguous — ' +
+          candidates.size() +
+          ' contexts closed at the same level:\n  ' +
+          String.join(candidates, ' / ') +
+          '\nUse TraceFlow.usageOf(contextName) to target one.'
+      );
+    }
   }
 
   /**
@@ -348,7 +424,8 @@ public with sharing class TraceFlow {
    * @description Checks if the last history entry is a Start operation
    * @return True if the last history is Start
    */
-  public static Boolean isLastStart() {
+  @TestVisible
+  private static Boolean isLastStart() {
     if (histories.isEmpty()) {
       return false;
     }
@@ -359,7 +436,8 @@ public with sharing class TraceFlow {
    * @description Checks if the last history entry is a Log operation
    * @return True if the last history is Log
    */
-  public static Boolean isLastLog() {
+  @TestVisible
+  private static Boolean isLastLog() {
     if (histories.isEmpty()) {
       return false;
     }
@@ -429,17 +507,6 @@ public with sharing class TraceFlow {
   }
 
   /**
-   * @description Gets the last history entry (instance method)
-   * @return The last TraceHistory, or null if empty
-   */
-  public TraceHistory getLastHistory() {
-    if (histories.isEmpty()) {
-      return null;
-    }
-    return histories[histories.size() - 1];
-  }
-
-  /**
    * @description Gets all history entries
    * @return A copy of the list of all TraceHistory entries
    */
@@ -451,7 +518,8 @@ public with sharing class TraceFlow {
    * @description Gets the count of history entries
    * @return The number of history entries
    */
-  public static Integer getHistoryCount() {
+  @TestVisible
+  private static Integer getHistoryCount() {
     return histories.size();
   }
 
@@ -459,7 +527,8 @@ public with sharing class TraceFlow {
    * @description Gets the count of traces in the stack
    * @return The number of traces in the stack
    */
-  public static Integer getStackDepth() {
+  @TestVisible
+  private static Integer getStackDepth() {
     return traces.size();
   }
 
@@ -477,6 +546,8 @@ public with sharing class TraceFlow {
   /**
    * @description Checks if the trace stack is empty
    * @return True if there are no traces in the stack
+   *
+   * @internal Called by Trace. Not part of the consumer API.
    */
   public static boolean isEmpty() {
     return traces.isEmpty();
