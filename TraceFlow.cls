@@ -410,6 +410,41 @@ public with sharing class TraceFlow {
   }
 
   /**
+   * @description Discards the trace history accumulated so far, so that
+   * assertions observe only what happens after this call. Place it at the
+   * Arrange / Act boundary of a test, next to Test.startTest():
+   *
+   * ```
+   * setupData();                 // Arrange — trigger-driven usecases traced here
+   * TraceFlow.discardArrange();  // ← the same boundary you already write
+   * Test.startTest();
+   * ```
+   *
+   * Without it, usageOf() sums Arrange-time invocations into the Act numbers,
+   * and path asserts (isLastSkip() etc.) can read an Arrange context when the
+   * Act produced none. Only the history is discarded — the open context stack
+   * and its usage snapshots are left intact, so a Trace opened before this
+   * call (the test's own wrapper) still closes correctly.
+   *
+   * In Strict mode (test execution) calling this while a usecase context is
+   * still open throws: it would erase the Start entry and silently drop that
+   * context from usagesOf(). At the boundary, at most the test's own wrapping
+   * Trace is open.
+   *
+   * @throws TraceException In Strict mode when more than one context is open
+   */
+  public static void discardArrange() {
+    if (isStrict() && traces.size() > 1) {
+      throw new TraceException(
+        'discardArrange() must be called at the Arrange / Act boundary, while no usecase context is open. Currently open: ' +
+          traces.size() +
+          ' contexts.'
+      );
+    }
+    histories.clear();
+  }
+
+  /**
    * @description Returns the last history entry
    * @return The last TraceHistory, or null if empty
    */

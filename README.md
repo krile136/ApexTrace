@@ -265,6 +265,37 @@ Notes:
 - Consumption asserts (`assertSoqlQueriesAtMost` etc.) on a context that **never ran** (`usageOf` with no match, invocations = 0) throw instead of passing vacuously — a typo'd context name, the wrong test layer, or missing wiring all surface immediately. Asserting that a context does *not* run stays legitimate: `assertInvocationsAtMost(0)`.
 - Debug logs now show the cost of each section, e.g. `FINISH: QuoteRecalculation\nUsage: SOQL: 3 (rows: 120), DML: 1 (rows: 30), Callouts: 0`.
 
+### Scoping the observation window: discardArrange()
+
+Trace history accumulates from the top of the test method — Arrange DML that
+fires triggers leaves the traced usecases in the history, polluting both the
+usage numbers and the path asserts. Discard it at the Arrange / Act boundary,
+right next to the `Test.startTest()` you already write:
+
+```apex
+setupData();                 // Arrange — trigger-driven usecases traced here
+
+TraceFlow.discardArrange();  // ← same boundary
+Test.startTest();
+
+new SomeUsecase(ids).invoke();
+Test.stopTest();
+
+TraceFlow.usageOf('SomeUsecase')      // Act only — invocations are correct too
+  .assertInvocationsAtMost(1)
+  .assertSoqlQueriesAtMost(0, 'issues nothing when there is no diff');
+
+Assert.isTrue(TraceFlow.isLastSkip());   // path asserts are Act-scoped as well
+```
+
+Only the history is discarded — a Trace opened before the call (the test's own
+wrapper) still closes correctly. In test execution, calling it while a usecase
+context is open throws (it would silently drop that context); at the boundary,
+at most the wrapping Trace is open. Forgetting the call cannot be detected by
+the library — but `assertInvocationsAtMost` is the natural sentinel: an
+Arrange-time invocation bumps the count and fails the assert, which is one more
+reason to always start with the invocation bound.
+
 ### Per-context aggregation: usageOf()
 
 `lastUsage()` only returns the most recently closed context — when a trigger
