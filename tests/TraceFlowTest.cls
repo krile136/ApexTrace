@@ -757,4 +757,136 @@ public with sharing class TraceFlowTest {
     // Act & Assert
     Assert.areEqual(2, TraceFlow.getAllHistories().size(), 'Start + Finish entries.');
   }
+
+  // ===============================================================================
+  // discardArrange (issue #10): align the observation window with the Act phase.
+  // Only the history is discarded; the open stack and snapshots survive.
+  // ===============================================================================
+
+  @isTest
+  static void testDiscardArrange_WhenArrangeTraced_ThenUsageOfSeesOnlyAct() {
+    // Arrange - a usecase runs once during Arrange (e.g. via a trigger), then twice in Act
+    TraceFlow.clear();
+    StubLimitsReader stub = new StubLimitsReader();
+    TraceUsage.limitsReader = stub;
+
+    Trace arrangeRun = Trace.of('UsecaseA');
+    arrangeRun.start();
+    stub.queries += 5;
+    arrangeRun.finish();
+
+    TraceFlow.discardArrange();
+
+    Trace actRun1 = Trace.of('UsecaseA');
+    actRun1.start();
+    stub.queries += 2;
+    actRun1.finish();
+    Trace actRun2 = Trace.of('UsecaseA');
+    actRun2.start();
+    stub.queries += 2;
+    actRun2.finish();
+
+    // Act
+    TraceUsage usage = TraceFlow.usageOf('UsecaseA');
+
+    // Assert - the Arrange invocation and its 5 queries are gone
+    Assert.areEqual(2, usage.getInvocations(), 'Only the Act invocations count.');
+    Assert.areEqual(4, usage.getSoqlQueries(), 'Only the Act consumption counts.');
+  }
+
+  @isTest
+  static void testDiscardArrange_WhenWrappingTraceOpen_ThenItStillFinishes() {
+    // Arrange - the essential guarantee: the test-authoring convention wraps the
+    // whole test in a Trace; discarding at the boundary must not break its close
+    TraceFlow.clear();
+    Trace wrapper = Trace.of('テストの説明');
+    wrapper.start();
+
+    Trace arrangeRun = Trace.of('UsecaseA');
+    arrangeRun.start();
+    arrangeRun.finish();
+
+    TraceFlow.discardArrange();
+
+    Trace actRun = Trace.of('UsecaseA');
+    actRun.start();
+    actRun.finish();
+
+    wrapper.finish(); // must not throw: traces / startSnapshots were left intact
+
+    // Assert - the wrapper closed normally and is the last history entry
+    Assert.isTrue(TraceFlow.isLastFinish());
+    Assert.areEqual(0, TraceFlow.getStackDepth(), 'The stack unwound completely.');
+  }
+
+  @isTest
+  static void testDiscardArrange_WhenActProducesNothing_ThenPathAssertsAreActScoped() {
+    // Arrange - an Arrange context finished; after the boundary the Act usecase skips
+    TraceFlow.clear();
+    Trace arrangeRun = Trace.of('ArrangeUsecase');
+    arrangeRun.start();
+    arrangeRun.finish();
+
+    TraceFlow.discardArrange();
+
+    Trace actRun = Trace.of('ActUsecase');
+    actRun.start();
+    actRun.skip('nothing to do');
+
+    // Assert - isLastSkip reads the Act path, not the Arrange finish
+    Assert.isTrue(TraceFlow.isLastSkip());
+    Assert.isFalse(TraceFlow.contains('ArrangeUsecase'), 'Arrange history is gone.');
+  }
+
+  @isTest
+  static void testDiscardArrange_WhenNothingAccumulated_ThenIdempotent() {
+    // Arrange
+    TraceFlow.clear();
+
+    // Act - empty, then twice in a row: neither may throw
+    TraceFlow.discardArrange();
+    TraceFlow.discardArrange();
+
+    // Assert
+    Assert.areEqual(0, TraceFlow.getHistoryCount());
+  }
+
+  @isTest
+  static void testDiscardArrange_WhenUsecaseContextOpen_ThenThrowInStrict() {
+    // Arrange - calling mid-context would silently drop the open context from
+    // usagesOf (its Start is erased); Strict rejects the misplacement
+    TraceFlow.clear();
+    Trace wrapper = Trace.of('テストの説明');
+    wrapper.start();
+    Trace usecase = Trace.of('UsecaseA');
+    usecase.start();
+
+    // Act & Assert
+    try {
+      TraceFlow.discardArrange();
+      Assert.fail('Expected TraceException to be thrown');
+    } catch (TraceException e) {
+      Assert.isTrue(e.getMessage().contains('Arrange / Act boundary'), e.getMessage());
+    }
+    TraceFlow.clear(); // unwind the open contexts
+  }
+
+  @isTest
+  static void testDiscardArrange_WhenRelaxedMode_ThenGuardInactive() {
+    // Arrange - production never throws from this guard
+    TraceFlow.clear();
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace wrapper = Trace.of('Outer');
+    wrapper.start();
+    Trace usecase = Trace.of('UsecaseA');
+    usecase.start();
+
+    // Act - no exception even though two contexts are open
+    TraceFlow.discardArrange();
+
+    // Assert
+    Assert.areEqual(0, TraceFlow.getHistoryCount());
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Strict);
+    TraceFlow.clear();
+  }
 }
