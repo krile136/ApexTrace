@@ -37,6 +37,117 @@ public with sharing class TraceFlow {
   private static TraceMode mode = Test.isRunningTest() ? TraceMode.Strict : TraceMode.Relaxed;
 
   /**
+   * External sink discovery (issue: standalone-deployable sink packages).
+   *
+   * The sink is spoken to through System.Callable only — no ApexTrace type
+   * crosses the boundary — so a sink package (e.g. ApexLogbook) compiles and
+   * deploys without ApexTrace, and vice versa. A class named SINK_CLASS_NAME
+   * that implements Callable is discovered once per transaction; when absent,
+   * every notification is a no-op.
+   *
+   * Wire contract (all values are platform types):
+   *   action 'trace:onEntry' — one history entry was recorded. args:
+   *     'type'        String  Start | Log | Skip | Abort | Finish
+   *     'contextName' String
+   *     'message'     String  (nullable)
+   *     'timestampMs' Long    epoch milliseconds
+   *     'depth'       Integer stack depth at recording time (1 = top level)
+   *     'usage'       Map<String, Integer> with keys soql / soqlRows / dml /
+   *                   dmlRows / callouts, or null for entries that do not
+   *                   close a context (Start / Log)
+   *   action 'trace:onStackEmpty' — a top-level context closed (the natural
+   *     checkpoint to flush). args: null
+   *
+   * Unknown actions must be ignored by sinks; new actions may be added in
+   * later versions without breaking older sinks.
+   */
+  private static final String SINK_CLASS_NAME = 'Logbook';
+  private static final String ACTION_ON_ENTRY = 'trace:onEntry';
+  private static final String ACTION_ON_STACK_EMPTY = 'trace:onStackEmpty';
+
+  private static Boolean sinkResolved = false;
+  private static Callable sink;
+
+  /**
+   * @description Resolves the sink by convention name, once per transaction.
+   * Absent class / not Callable / test run (unless overridden) → null.
+   * @return The sink, or null when none is active
+   */
+  private static Callable resolveSink() {
+    if (!sinkResolved) {
+      sinkResolved = true;
+      if (!Test.isRunningTest()) {
+        Type sinkType = Type.forName(SINK_CLASS_NAME);
+        Object candidate = (sinkType == null) ? null : sinkType.newInstance();
+        sink = (candidate instanceof Callable) ? (Callable) candidate : null;
+      }
+    }
+    return sink;
+  }
+
+  /**
+   * @description Replaces the sink (for testing purposes)
+   * @param testSink The sink to inject
+   */
+  @TestVisible
+  private static void overrideSink(Callable testSink) {
+    sink = testSink;
+    sinkResolved = true;
+  }
+
+  /**
+   * @description Notifies the sink of a recorded history entry, decomposed
+   * into platform types per the wire contract. No-op when no sink is active.
+   * @param entry The history entry just recorded
+   */
+  private static void notifyEntry(TraceHistory entry) {
+    Callable target = resolveSink();
+    if (target == null) {
+      return;
+    }
+    target.call(
+      ACTION_ON_ENTRY,
+      new Map<String, Object>{
+        'type' => entry.getType().name(),
+        'contextName' => entry.getContextName(),
+        'message' => entry.getMessage(),
+        'timestampMs' => entry.getTimestamp(),
+        'depth' => traces.size(),
+        'usage' => usageAsMap(entry.getUsage())
+      }
+    );
+  }
+
+  /**
+   * @description Notifies the sink that a top-level context closed.
+   * No-op when no sink is active.
+   */
+  private static void notifyStackEmpty() {
+    Callable target = resolveSink();
+    if (target != null) {
+      target.call(ACTION_ON_STACK_EMPTY, null);
+    }
+  }
+
+  /**
+   * @description Decomposes a TraceUsage into the wire-contract map
+   * @param usage The usage to decompose (may be null)
+   * @return The map, or null when usage is null
+   */
+  private static Map<String, Integer> usageAsMap(TraceUsage usage) {
+    if (usage == null) {
+      return null;
+    }
+    return new Map<String, Integer>{
+      'soql' => usage.getSoqlQueries(),
+      'soqlRows' => usage.getSoqlRows(),
+      'dml' => usage.getDmlStatements(),
+      'dmlRows' => usage.getDmlRows(),
+      'callouts' => usage.getCallouts()
+    };
+  }
+
+  /**
    * @description Enum representing the strictness mode of context validation
    */
   @TestVisible
@@ -115,7 +226,9 @@ public with sharing class TraceFlow {
     traces.add(newTrace);
     startSnapshots.add(TraceUsage.capture());
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Start, contextName, null));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Start, contextName, null);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'START: ' + contextName + ' is starting';
     System.debug(logMessage);
   }
@@ -128,7 +241,9 @@ public with sharing class TraceFlow {
    */
   public static void log(String message) {
     String contextName = currentContextName();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Log, contextName, message));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Log, contextName, message);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = currentContextName() + ': ' + message;
     System.debug(logMessage);
   }
@@ -141,7 +256,9 @@ public with sharing class TraceFlow {
   public static void skip() {
     String contextName = currentContextName();
     TraceUsage usage = currentUsage();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Skip, contextName, null).setUsage(usage));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Skip, contextName, null).setUsage(usage);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'SKIP: ' + contextName + ' is skipped' + usageSuffix(usage);
     System.debug(logMessage);
     pop();
@@ -156,7 +273,9 @@ public with sharing class TraceFlow {
   public static void skip(String reason) {
     String contextName = currentContextName();
     TraceUsage usage = currentUsage();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Skip, contextName, reason).setUsage(usage));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Skip, contextName, reason).setUsage(usage);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'SKIP: ' + contextName + ' is skipped for the following reason.\nReason: ' + reason + usageSuffix(usage);
     System.debug(logMessage);
     pop();
@@ -170,7 +289,9 @@ public with sharing class TraceFlow {
   public static void finish() {
     String contextName = currentContextName();
     TraceUsage usage = currentUsage();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Finish, contextName, null).setUsage(usage));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Finish, contextName, null).setUsage(usage);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'FINISH: ' + contextName + usageSuffix(usage);
     System.debug(logMessage);
     pop();
@@ -185,7 +306,9 @@ public with sharing class TraceFlow {
   public static void finish(String result) {
     String contextName = currentContextName();
     TraceUsage usage = currentUsage();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Finish, contextName, result).setUsage(usage));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Finish, contextName, result).setUsage(usage);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'FINISH: ' + contextName + '\nResult: ' + result + usageSuffix(usage);
     System.debug(logMessage);
     pop();
@@ -199,7 +322,9 @@ public with sharing class TraceFlow {
   public static void abort() {
     String contextName = currentContextName();
     TraceUsage usage = currentUsage();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Abort, contextName, null).setUsage(usage));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Abort, contextName, null).setUsage(usage);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'ABORT: ' + contextName + ' is aborted.' + usageSuffix(usage);
     System.debug(logMessage);
     pop();
@@ -214,7 +339,9 @@ public with sharing class TraceFlow {
   public static void abort(String result) {
     String contextName = currentContextName();
     TraceUsage usage = currentUsage();
-    histories.add(new TraceHistory(TraceHistory.HistoryType.Abort, contextName, result).setUsage(usage));
+    TraceHistory entry = new TraceHistory(TraceHistory.HistoryType.Abort, contextName, result).setUsage(usage);
+    histories.add(entry);
+    notifyEntry(entry);
     String logMessage = 'ABORT: ' + contextName + ' is aborted for the following reason.\nReason: ' + result + usageSuffix(usage);
     System.debug(logMessage);
     pop();
@@ -247,6 +374,12 @@ public with sharing class TraceFlow {
     traces.remove(traces.size() - 1);
     if (!startSnapshots.isEmpty()) {
       startSnapshots.remove(startSnapshots.size() - 1);
+    }
+    if (traces.isEmpty()) {
+      // A top-level context closed: the checkpoint boundary for sinks.
+      // Fired after the close entry's usage snapshot was taken, so whatever
+      // the sink does here is never attributed to the closed context.
+      notifyStackEmpty();
     }
   }
 
