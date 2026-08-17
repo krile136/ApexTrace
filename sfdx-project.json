@@ -1,0 +1,20 @@
+{
+  "packageDirectories": [
+    {
+      "versionName": "v1.4.0",
+      "versionNumber": "1.4.0.NEXT",
+      "path": ".",
+      "default": true,
+      "package": "ApexTrace",
+      "versionDescription": ""
+    }
+  ],
+  "name": "ApexTrace",
+  "namespace": "",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "64.0",
+  "packageAliases": {
+    "ApexTrace": "0HogK0000004C7RSAU",
+    "ApexTrace@1.4.0-1": "04tgK000000HaFBQA0"
+  }
+}
