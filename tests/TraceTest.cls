@@ -17,6 +17,7 @@
 /**
  * @description Test class for Trace, TraceFlow, and TraceHistory
  * Tests the context management, nesting, error handling, and various trace operations
+ * @directory ApexTrace/tests
  */
 @isTest
 public with sharing class TraceTest {

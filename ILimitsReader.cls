@@ -21,6 +21,7 @@
  * stub with synthetic values, so usage arithmetic, formatting, and assertion
  * helpers are verified deterministically without issuing any SOQL or DML —
  * framework tests stay independent of consumer-org customization.
+ * @directory ApexTrace
  */
 public interface ILimitsReader {
   Integer getQueries();

@@ -17,6 +17,7 @@
 /**
  * @description Test class for TraceException
  * Tests the enhanced exception functionality with context information
+ * @directory ApexTrace/tests
  */
 @isTest
 public with sharing class TraceExceptionTest {

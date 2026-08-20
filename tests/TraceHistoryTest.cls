@@ -17,6 +17,7 @@
 /**
  * @description Test class for TraceHistory
  * Tests the getter methods and history entry functionality
+ * @directory ApexTrace/tests
  */
 @isTest
 public with sharing class TraceHistoryTest {

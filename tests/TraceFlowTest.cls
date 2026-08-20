@@ -17,6 +17,7 @@
 /**
  * @description Test class for TraceFlow to improve code coverage
  * Tests edge cases and internal methods of TraceFlow
+ * @directory ApexTrace/tests
  */
 @isTest
 public with sharing class TraceFlowTest {
