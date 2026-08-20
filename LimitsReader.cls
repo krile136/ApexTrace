@@ -17,6 +17,7 @@
 /**
  * @description Production ILimitsReader: reads the transaction's actual governor
  * limit counters from System.Limits.
+ * @directory ApexTrace
  */
 public with sharing class LimitsReader implements ILimitsReader {
   public Integer getQueries() {

@@ -21,6 +21,7 @@
  * ILimitsReader (synthetic counter values) — fully deterministic and free of
  * SOQL/DML, so consumer-org customization can never break these tests. A single
  * loose test verifies that the production LimitsReader reads real counters.
+ * @directory ApexTrace/tests
  */
 @isTest
 public with sharing class TraceUsageTest {

@@ -23,6 +23,7 @@
  * - The current context name when the error occurred
  * - The expected context name (if applicable)
  * - The operation type that was attempted
+ * @directory ApexTrace
  */
 public with sharing class TraceException extends Exception {
   private String currentContext;

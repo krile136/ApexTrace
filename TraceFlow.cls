@@ -28,6 +28,7 @@
  * Notes:
  * - This class holds state statically, so it is only valid within a single transaction
  * - Explicit reset is not necessary (it is destroyed at the end of the transaction)
+ * @directory ApexTrace
  */
 public with sharing class TraceFlow {
   private static List<Trace> traces = new List<Trace>();

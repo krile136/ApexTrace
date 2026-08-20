@@ -18,6 +18,7 @@
  * @description Represents a single history entry in the Trace flow
  * Captures the type of operation (Start, Log, Skip, Abort, Finish),
  * the context name, message, and timestamp.
+ * @directory ApexTrace
  */
 public with sharing class TraceHistory {
   /**

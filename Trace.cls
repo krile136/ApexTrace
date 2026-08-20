@@ -52,6 +52,7 @@
  * Notes:
  * - log() / finish() must always be called from the "current context"
  * - Invalid calls will throw a TraceException
+ * @directory ApexTrace
  */
 public with sharing class Trace {
   private final String contextName;

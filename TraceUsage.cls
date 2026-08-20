@@ -37,6 +37,7 @@
  *   .assertSoqlQueriesAtMost(3)
  *   .assertDmlStatementsAtMost(1);
  * ```
+ * @directory ApexTrace
  */
 public with sharing class TraceUsage {
   private final Integer soqlQueries;
