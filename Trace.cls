@@ -22,7 +22,11 @@
  *
  * - Allow log output only within the range enclosed by START / END
  * - Strictly manage nested contexts with a Stack structure
- * - Immediately throw an exception for incorrect order (forgotten END, log output from outer context, etc.)
+ * - Lifecycle calls (log / skip / finish / abort) in the wrong order (forgotten END, log output from
+ *   outer context, etc.) throw immediately in tests (Strict mode). In production (Relaxed mode) they never
+ *   throw: Traces left open above a Trace are aborted when a later lifecycle call on that Trace comes
+ *   (a Trace with no later call stays open until the transaction ends), and a call on a Trace that is
+ *   not running is skipped with a warning in the debug log. Trace.of(null) / Trace.of('') throw in both modes
  *
  * Main uses:
  * - Visualization of processing flow for Trigger / Service / UseCase units
@@ -51,7 +55,9 @@
  *
  * Notes:
  * - log() / finish() must always be called from the "current context"
- * - Invalid calls will throw a TraceException
+ * - Lifecycle calls on the wrong Trace throw a TraceException in tests (Strict mode) and are skipped in
+ *   production (Relaxed mode). Keep the started instance: a Trace re-created with Trace.of(...) is a
+ *   different Trace, even with the same name
  * @directory ApexTrace
  */
 public with sharing class Trace {
@@ -92,7 +98,6 @@ public with sharing class Trace {
 
   /**
    * @description Pushes this Trace to TraceFlow and starts the context
-   * @throws TraceException If the context cannot be started
    */
   public void start() {
     TraceFlow.push(this);
@@ -101,57 +106,50 @@ public with sharing class Trace {
   /**
    * @description Outputs a log message associated with the current Trace context
    *
-   * This method can only be executed when the current context of TraceFlow
-   * matches the contextName of the calling Trace.
+   * In Strict mode (tests), this method can only be executed when the calling Trace instance
+   * is the current context of TraceFlow (a Trace re-created with the same name does not match).
+   * In Relaxed mode (production), Traces left open above it are aborted first.
    *
-   * @param message The log message to output (cannot be null or empty)
-   * @throws TraceException
-   *   - If message is null or empty
-   *   - If it does not match the current Trace context
+   * @param message The log message to output
+   * A null or empty message is recorded as "Trace log message is null." / "... is empty."
+   *
+   * @throws TraceException In Strict mode (tests), if the Trace context is undefined or does not match the current context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void log(String message) {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Log)) {
+      return;
     }
-
-    if(message == null) {
+    if (message == null) {
       TraceFlow.log('Trace log message is null.');
       return;
     }
-
-    if(message == '') {
+    if (message == '') {
       TraceFlow.log('Trace log message is empty.');
       return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Log);
     TraceFlow.log(message);
   }
 
   /**
    * @description Skips the current Trace context
-   * @throws TraceException If the Trace context is undefined or does not match the current context
+   * @throws TraceException In Strict mode (tests), if the Trace context is undefined or does not match the current context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void skip() {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Skip)) {
+      return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Skip);
     TraceFlow.skip();
   }
 
   /**
    * @description Skips the current Trace context with a reason message
    * @param message The reason for skipping
-   * @throws TraceException If the Trace context is undefined or does not match the current context
+   * @throws TraceException In Strict mode (tests), if the Trace context is undefined or does not match the current context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void skip(String message) {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Skip)) {
+      return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Skip);
     TraceFlow.skip(message);
   }
 
@@ -161,55 +159,47 @@ public with sharing class Trace {
    * finish() must always be called from the "current context".
    * If you try to finish() an outer Trace while nested, an exception will be thrown.
    *
-   * @throws TraceException If it does not match the current Trace context
+   * @throws TraceException In Strict mode (tests), if it does not match the current Trace context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void finish() {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Finish)) {
+      return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Finish);
     TraceFlow.finish();
   }
 
   /**
    * @description Ends the Trace context with a result message and pops it from TraceFlow
    * @param message The result message
-   * @throws TraceException If it does not match the current Trace context
+   * @throws TraceException In Strict mode (tests), if it does not match the current Trace context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void finish(String message) {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Finish)) {
+      return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Finish);
     TraceFlow.finish(message);
   }
 
   /**
    * @description Aborts the current Trace context
-   * @throws TraceException If the Trace context is undefined or does not match the current context
+   * @throws TraceException In Strict mode (tests), if the Trace context is undefined or does not match the current context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void abort() {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Abort)) {
+      return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Abort);
     TraceFlow.abort();
   }
 
   /**
    * @description Aborts the current Trace context with a reason message
    * @param message The reason for aborting
-   * @throws TraceException If the Trace context is undefined or does not match the current context
+   * @throws TraceException In Strict mode (tests), if the Trace context is undefined or does not match the current context. Relaxed mode (production) skips the call instead (issue #14)
    */
   public void abort(String message) {
-    if (TraceFlow.isEmpty()) {
-      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.');
+    if (!TraceFlow.ensureContext(this, TraceHistory.HistoryType.Abort)) {
+      return;
     }
-
-    TraceFlow.ensureContext(this.contextName, TraceHistory.HistoryType.Abort);
     TraceFlow.abort(message);
   }
 }

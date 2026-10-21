@@ -64,50 +64,143 @@ public with sharing class TraceFlow {
   }
 
   /**
-   * @description Ensures that the expected context matches the current context
-   * In Strict mode, throws an exception if contexts don't match.
-   * In Relaxed mode, automatically aborts mismatched contexts.
+   * @description Ensures that the expected Trace is the current one before an operation.
    *
-   * @param expectedContextName The expected context name
-   * @param expectedHistoryType The expected history type
-   * @throws TraceException If context validation fails
+   * The Trace is matched by instance, not by name. A Usecase that calls itself runs two Traces
+   * with the same name; matching by name let the inner one's second finish() close the outer
+   * one (and compared names without regard to case, like any Apex String `==`).
+   *
+   * Strict mode (tests) throws when the Trace is not the current one, or when no Trace
+   * has been started, so a misplaced finish() or log() fails the test that exercises it.
+   *
+   * Relaxed mode (production) never throws: a logging aid must not stop the business
+   * transaction it observes (issue #14).
+   * - The Trace is on the stack but not on top: the Traces above it were left open
+   *   (typically by an exception), so they are aborted and the operation proceeds.
+   * - The Trace is not on the stack (finished twice, never started): nothing is aborted,
+   *   a warning goes to the debug log, and the operation is skipped. Aborting until the
+   *   stack ran empty used to tear down the parent Usecase's Trace as well.
+   *
+   * @param expected The Trace the operation belongs to
+   * @param expectedHistoryType The operation
+   * @return True when the operation should proceed; false when Relaxed mode skips it
+   * @throws TraceException In Strict mode, if the Trace is not the current one
    *
    * @internal Called by Trace to validate lifecycle order. Not part of the consumer API.
    */
-  public static void ensureContext(String expectedContextName, TraceHistory.HistoryType expectedHistoryType) {
+  public static Boolean ensureContext(Trace expected, TraceHistory.HistoryType expectedHistoryType) {
+    String expectedContextName = expected == null ? null : expected.getContextName();
     if (isStrict()) {
-      // In Strict mode, strictly check context consistency
-      if (currentContextName() != expectedContextName) {
+      if (traces.isEmpty()) {
+        throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.')
+          .setExpectedContext(expectedContextName)
+          .setOperationType(expectedHistoryType.name());
+      }
+      if (traces[traces.size() - 1] !== expected) {
         String errorMessage = String.format(
           'The context for {0} operation is not the current context.\n Context for {0} operation: {1}\n Current context: {2}',
           new List<String>{ expectedHistoryType.name(), expectedContextName, currentContextName() }
         );
+        if (expectedContextName != null && expectedContextName.equals(currentContextName())) {
+          errorMessage += '\n The current context is a different Trace with the same name: this one was finished twice,'
+            + ' an inner Trace with the same name was not finished, the Usecase called itself,'
+            + ' or the Trace was re-created with Trace.of(...) instead of using the instance that was started.';
+        }
         throw new TraceException(errorMessage)
           .setExpectedContext(expectedContextName)
           .setCurrentContext(currentContextName())
           .setOperationType(expectedHistoryType.name());
       }
-    } else {
-      // In Relaxed mode, automatically abort if context is wrong
-      // However, if expectedContextName is not found even after traces becomes empty, throw an exception
-      while (currentContextName() != expectedContextName) {
-        if (traces.isEmpty()) {
-          String errorMessage = String.format(
-            'No matching Trace context found for {1} operation in current context: {0}.',
-            new List<String>{ expectedContextName, expectedHistoryType.name() }
-          );
-          throw new TraceException(errorMessage).setExpectedContext(expectedContextName).setOperationType(expectedHistoryType.name());
-        }
-        abort('Automatically aborted due to context mismatch. Expected context: ' + expectedContextName);
+      return true;
+    }
+
+    if (!isOnStack(expected)) {
+      String recreatedNote = expectedContextName != null && expectedContextName.equals(currentContextName())
+        ? ' The current context has the same name: if this Trace was re-created with Trace.of(...), use the instance that was started.'
+        : '';
+      System.debug(
+        LoggingLevel.WARN,
+        String.format(
+          'Trace: {0} on "{1}" was ignored because that Trace is not running (finished already, or never started). Current context: {2}.{3}',
+          new List<String>{ expectedHistoryType.name(), expectedContextName, currentContextName(), recreatedNote }
+        )
+      );
+      return false;
+    }
+    while (traces[traces.size() - 1] !== expected) {
+      abort('Automatically aborted due to context mismatch. Expected context: ' + expectedContextName);
+    }
+    return true;
+  }
+
+  /**
+   * @description Name-based form of ensureContext, kept for callers written before the
+   * Trace-based form. It resolves the name to the topmost running Trace with that name.
+   * Names are compared with Apex String `==`, which ignores case, as before.
+   *
+   * @param expectedContextName The expected context name
+   * @param expectedHistoryType The operation
+   * @return True when the operation should proceed; false when Relaxed mode skips it
+   * @throws TraceException In Strict mode, if that context is not the current one
+   *
+   * @internal Prefer ensureContext(Trace, HistoryType). Not part of the consumer API.
+   */
+  public static Boolean ensureContext(String expectedContextName, TraceHistory.HistoryType expectedHistoryType) {
+    Trace named = null;
+    for (Integer i = traces.size() - 1; i >= 0; i--) {
+      if (traces[i].getContextName() == expectedContextName) {
+        named = traces[i];
+        break;
       }
     }
+    if (named == null && isStrict() && !traces.isEmpty()) {
+      String errorMessage = String.format(
+        'The context for {0} operation is not the current context.\n Context for {0} operation: {1}\n Current context: {2}',
+        new List<String>{ expectedHistoryType.name(), expectedContextName, currentContextName() }
+      );
+      throw new TraceException(errorMessage)
+        .setExpectedContext(expectedContextName)
+        .setCurrentContext(currentContextName())
+        .setOperationType(expectedHistoryType.name());
+    }
+    if (named == null && isStrict()) {
+      throw new TraceException('Trace context is undefined. Please execute the start method of the Trace instance.')
+        .setExpectedContext(expectedContextName)
+        .setOperationType(expectedHistoryType.name());
+    }
+    if (named == null) {
+      System.debug(
+        LoggingLevel.WARN,
+        String.format(
+          'Trace: {0} on "{1}" was ignored because that Trace is not running (finished already, or never started). Current context: {2}.',
+          new List<String>{ expectedHistoryType.name(), expectedContextName, currentContextName() }
+        )
+      );
+      return false;
+    }
+    return ensureContext(named, expectedHistoryType);
+  }
+
+  /**
+   * @description Whether this Trace instance is running anywhere on the stack.
+   *
+   * @param target The Trace to look for
+   * @return True when the Trace is on the stack
+   */
+  private static Boolean isOnStack(Trace target) {
+    for (Trace runningTrace : traces) {
+      if (runningTrace === target) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
    * @description Adds a Trace context to the Stack
    * @param newTrace The Trace to push (does nothing if null)
    *
-   * @internal Called by Trace.start(). Consumers use Trace.of(...).start().
+   * @internal Called by Trace.start(). Consumers keep the instance (`Trace t = Trace.of(...); t.start();`) and call t.finish() on it: a Trace re-created with Trace.of(...) is a different Trace.
    */
   public static void push(Trace newTrace) {
     if (newTrace == null) {

@@ -123,21 +123,16 @@ public with sharing class TraceExceptionTest {
   }
 
   @isTest
-  static void testException_WhenRelaxedModeAndContextNotFound_ThenHasOperationType() {
-    // Arrange
-    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
-    Trace outerTrace = Trace.of('OuterContext');
-    outerTrace.start();
-
-    // Act / Assert
+  static void testException_WhenStrictModeAndNoTraceStarted_ThenHasOperationType() {
+    // Act / Assert (Strict is the test default)
     try {
       TraceFlow.ensureContext('NonExistentContext', TraceHistory.HistoryType.Skip);
       Assert.fail('Exception was not thrown.');
     } catch (TraceException e) {
-      // Verify that operation type was captured
+      Assert.isTrue(e.getMessage().contains('Trace context is undefined'), e.getMessage());
       Assert.areEqual('NonExistentContext', e.getExpectedContext());
       Assert.areEqual('Skip', e.getOperationType());
-      Assert.isNull(e.getCurrentContext()); // Current context is cleared in Relaxed mode
+      Assert.isNull(e.getCurrentContext());
     }
   }
 }

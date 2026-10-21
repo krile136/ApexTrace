@@ -461,4 +461,122 @@ public with sharing class TraceTest {
     Assert.isTrue(TraceFlow.isLastAbort());
     Assert.isTrue(TraceFlow.lastHistoryContains('Aborting this trace for testing purposes.'));
   }
+
+  @isTest
+  static void testFinish_WhenFinishedTwiceInRelaxedMode_ThenParentIsUntouched() {
+    // Arrange: a second finish() used to abort the parent and throw, failing the business transaction (issue #14)
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace parentTrace = Trace.of('ParentContext');
+    parentTrace.start();
+    Trace childTrace = Trace.of('ChildContext');
+    childTrace.start();
+    childTrace.finish();
+
+    // Act
+    childTrace.finish();
+    childTrace.log('late log');
+    parentTrace.finish();
+
+    // Assert
+    Assert.isTrue(TraceFlow.isEmpty());
+    Assert.isTrue(TraceFlow.isLastFinish());
+    Assert.areEqual('ParentContext', TraceFlow.lastHistory().getContextName());
+    for (TraceHistory history : TraceFlow.getAllHistories()) {
+      Assert.isFalse(history.isAbort(), 'Nothing may be aborted: ' + history.getContextName());
+    }
+  }
+
+  @isTest
+  static void testOperations_WhenNeverStartedInRelaxedMode_ThenSkippedWithoutException() {
+    // Arrange
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace lone = Trace.of('LoneContext');
+
+    // Act
+    lone.log('message');
+    lone.skip();
+    lone.skip('reason');
+    lone.abort();
+    lone.abort('reason');
+    lone.finish();
+    lone.finish('result');
+
+    // Assert
+    Assert.isTrue(TraceFlow.isEmpty());
+    Assert.areEqual(0, TraceFlow.getAllHistories().size());
+  }
+
+  @isTest
+  static void testFinish_WhenFinishedTwiceInStrictMode_ThenThrows() {
+    // Arrange: Strict mode (tests) keeps failing loudly, so the mistake is caught before production
+    Trace parentTrace = Trace.of('ParentContext');
+    parentTrace.start();
+    Trace childTrace = Trace.of('ChildContext');
+    childTrace.start();
+    childTrace.finish();
+
+    // Act / Assert
+    try {
+      childTrace.finish();
+      Assert.fail('Exception was not thrown.');
+    } catch (TraceException e) {
+      Assert.isTrue(e.getMessage().contains('is not the current context'), e.getMessage());
+    }
+  }
+
+  @isTest
+  static void testFinish_WhenSameNameNestedFinishedTwiceInRelaxedMode_ThenOuterStaysOpen() {
+    // Arrange: a recursive Usecase runs two Traces with one name; matching by name let the inner
+    // Trace's second finish() close the outer one
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace parentTrace = Trace.of('ParentContext');
+    parentTrace.start();
+    Trace outerSame = Trace.of('Recursive');
+    outerSame.start();
+    Trace innerSame = Trace.of('Recursive');
+    innerSame.start();
+    innerSame.finish();
+
+    // Act
+    innerSame.finish();
+
+    // Assert: the outer Trace is still running, and finishing it later works
+    Assert.areEqual('Recursive', TraceFlow.currentContextName());
+    outerSame.finish();
+    Assert.areEqual('ParentContext', TraceFlow.currentContextName());
+    parentTrace.finish();
+    Assert.isTrue(TraceFlow.isEmpty());
+  }
+
+  @isTest
+  static void testFinish_WhenSameNameNestedFinishedTwiceInStrictMode_ThenThrows() {
+    // Arrange
+    Trace outerSame = Trace.of('Recursive');
+    outerSame.start();
+    Trace innerSame = Trace.of('Recursive');
+    innerSame.start();
+    innerSame.finish();
+
+    // Act / Assert
+    try {
+      innerSame.finish();
+      Assert.fail('Exception was not thrown.');
+    } catch (TraceException e) {
+      Assert.isTrue(e.getMessage().contains('a different Trace with the same name'), e.getMessage());
+    }
+  }
+
+  @isTest
+  static void testFinish_WhenTraceIsRecreatedInRelaxedMode_ThenSkippedAndOriginalStaysOpen() {
+    // Arrange: Trace.of(...) makes a new Trace; only the started instance can finish it
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace.of('Recreated').start();
+
+    // Act
+    Trace.of('Recreated').finish();
+
+    // Assert
+    Assert.areEqual('Recreated', TraceFlow.currentContextName());
+    Assert.isTrue(TraceFlow.lastHistory().isStart());
+  }
 }
