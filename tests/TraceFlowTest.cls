@@ -221,10 +221,13 @@ public with sharing class TraceFlowTest {
     // Act: a context that is not on the stack used to abort everything and then throw (issue #14)
     Boolean proceeds = TraceFlow.ensureContext('NonExistentContext', TraceHistory.HistoryType.Log);
 
-    // Assert: the operation is skipped and the running contexts are left alone
+    // Assert: the operation is skipped, the running contexts are left alone, and the misuse is in the history
     Assert.isFalse(proceeds);
     Assert.areEqual('InnerContext', TraceFlow.currentContextName());
-    Assert.isTrue(TraceFlow.lastHistory().isStart());
+    TraceHistory last = TraceFlow.lastHistory();
+    Assert.isTrue(last.isLog());
+    Assert.areEqual('InnerContext', last.getContextName());
+    Assert.isTrue(last.containsText('ignored: Log on "NonExistentContext"'), last.getMessage());
   }
 
   @isTest

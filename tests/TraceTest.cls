@@ -481,9 +481,15 @@ public with sharing class TraceTest {
     Assert.isTrue(TraceFlow.isEmpty());
     Assert.isTrue(TraceFlow.isLastFinish());
     Assert.areEqual('ParentContext', TraceFlow.lastHistory().getContextName());
+    Integer ignored = 0;
     for (TraceHistory history : TraceFlow.getAllHistories()) {
       Assert.isFalse(history.isAbort(), 'Nothing may be aborted: ' + history.getContextName());
+      if (history.containsText('ignored: ')) {
+        Assert.areEqual('ParentContext', history.getContextName(), 'The misuse is recorded on the running context');
+        ignored++;
+      }
     }
+    Assert.areEqual(2, ignored, 'The second finish() and the late log() are both recorded');
   }
 
   @isTest
@@ -501,9 +507,15 @@ public with sharing class TraceTest {
     lone.finish();
     lone.finish('result');
 
-    // Assert
+    // Assert: nothing runs, and each skipped call is recorded under the misused Trace
     Assert.isTrue(TraceFlow.isEmpty());
-    Assert.areEqual(0, TraceFlow.getAllHistories().size());
+    List<TraceHistory> histories = TraceFlow.getAllHistories();
+    Assert.areEqual(7, histories.size());
+    for (TraceHistory history : histories) {
+      Assert.isTrue(history.isLog());
+      Assert.areEqual('LoneContext', history.getContextName());
+      Assert.isTrue(history.containsText('ignored: '), history.getMessage());
+    }
   }
 
   @isTest
@@ -577,6 +589,25 @@ public with sharing class TraceTest {
 
     // Assert
     Assert.areEqual('Recreated', TraceFlow.currentContextName());
-    Assert.isTrue(TraceFlow.lastHistory().isStart());
+    Assert.isTrue(TraceFlow.lastHistory().isLog());
+    Assert.isTrue(TraceFlow.lastHistory().containsText('re-created with Trace.of'), TraceFlow.lastHistory().getMessage());
+  }
+
+  @isTest
+  static void testFinish_WhenParentlessTraceFinishedTwiceInRelaxedMode_ThenRecordedInHistory() {
+    // Arrange: a Trace with no parent, the commonest place for a double finish
+    TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
+    Trace lone = Trace.of('LoneContext');
+    lone.start();
+    lone.finish();
+
+    // Act
+    lone.finish();
+
+    // Assert
+    TraceHistory last = TraceFlow.lastHistory();
+    Assert.isTrue(last.isLog());
+    Assert.areEqual('LoneContext', last.getContextName());
+    Assert.isTrue(last.containsText('ignored: Finish on "LoneContext"'), last.getMessage());
   }
 }

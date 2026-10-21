@@ -78,7 +78,8 @@ public with sharing class TraceFlow {
    * - The Trace is on the stack but not on top: the Traces above it were left open
    *   (typically by an exception), so they are aborted and the operation proceeds.
    * - The Trace is not on the stack (finished twice, never started): nothing is aborted,
-   *   a warning goes to the debug log, and the operation is skipped. Aborting until the
+   *   a warning goes to the debug log and to the history (a Log entry of the current context,
+   *   or of this Trace when nothing is running), and the operation is skipped. Aborting until the
    *   stack ran empty used to tear down the parent Usecase's Trace as well.
    *
    * @param expected The Trace the operation belongs to
@@ -118,13 +119,7 @@ public with sharing class TraceFlow {
       String recreatedNote = expectedContextName != null && expectedContextName.equals(currentContextName())
         ? ' The current context has the same name: if this Trace was re-created with Trace.of(...), use the instance that was started.'
         : '';
-      System.debug(
-        LoggingLevel.WARN,
-        String.format(
-          'Trace: {0} on "{1}" was ignored because that Trace is not running (finished already, or never started). Current context: {2}.{3}',
-          new List<String>{ expectedHistoryType.name(), expectedContextName, currentContextName(), recreatedNote }
-        )
-      );
+      recordIgnored(expectedHistoryType, expectedContextName, recreatedNote);
       return false;
     }
     while (traces[traces.size() - 1] !== expected) {
@@ -169,16 +164,37 @@ public with sharing class TraceFlow {
         .setOperationType(expectedHistoryType.name());
     }
     if (named == null) {
-      System.debug(
-        LoggingLevel.WARN,
-        String.format(
-          'Trace: {0} on "{1}" was ignored because that Trace is not running (finished already, or never started). Current context: {2}.',
-          new List<String>{ expectedHistoryType.name(), expectedContextName, currentContextName() }
-        )
-      );
+      recordIgnored(expectedHistoryType, expectedContextName, '');
       return false;
     }
     return ensureContext(named, expectedHistoryType);
+  }
+
+  /**
+   * @description Records a lifecycle call that Relaxed mode skipped.
+   *
+   * A warning in the debug log alone is only seen when a trace flag is set, so the misuse is
+   * also written to the history as a Log entry ("ignored: Finish on "X" ..."), and whatever
+   * reads the histories (TraceFlow assertions, a log store) sees it. The entry belongs to the
+   * current context, which tells what was running at the time; with an empty stack (a Trace
+   * with no parent finished twice, the commonest case) it belongs to the misused Trace itself.
+   *
+   * It is a Log entry, so no new HistoryType value appears for code that switches on them.
+   * Code that reads the last entry (lastHistory, isLastFinish) or counts entries does see it.
+   * The message starts with `ignored: `; keep that prefix, so a reader can tell these apart.
+   *
+   * @param operation The skipped operation
+   * @param contextName The name of the Trace the call was made on
+   * @param note An extra sentence for the message (empty for none)
+   */
+  private static void recordIgnored(TraceHistory.HistoryType operation, String contextName, String note) {
+    String message = String.format(
+      'ignored: {0} on "{1}" (that Trace is not running: finished already, or never started).{2}',
+      new List<String>{ operation.name(), contextName, note }
+    );
+    System.debug(LoggingLevel.WARN, 'Trace: ' + message + ' Current context: ' + currentContextName() + '.');
+    String owner = traces.isEmpty() ? contextName : currentContextName();
+    histories.add(new TraceHistory(TraceHistory.HistoryType.Log, owner, message));
   }
 
   /**
