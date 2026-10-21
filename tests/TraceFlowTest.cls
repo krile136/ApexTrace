@@ -210,7 +210,7 @@ public with sharing class TraceFlowTest {
   }
 
   @isTest
-  static void testEnsureContext_WhenRelaxedModeAndContextNotFound_ThenThrowException() {
+  static void testEnsureContext_WhenRelaxedModeAndContextNotFound_ThenSkipsWithoutAborting() {
     // Arrange
     TraceFlow.changeModeTo(TraceFlow.TraceMode.Relaxed);
     Trace outerTrace = Trace.of('OuterContext');
@@ -218,15 +218,16 @@ public with sharing class TraceFlowTest {
     Trace innerTrace = Trace.of('InnerContext');
     innerTrace.start();
 
-    // Act / Assert
-    try {
-      // Try to operate on a context that doesn't exist in the stack
-      TraceFlow.ensureContext('NonExistentContext', TraceHistory.HistoryType.Log);
-      Assert.fail('Exception was not thrown.');
-    } catch (TraceException e) {
-      String expect = 'No matching Trace context found for Log operation in current context: NonExistentContext.';
-      Assert.isTrue(e.getMessage().contains(expect));
-    }
+    // Act: a context that is not on the stack used to abort everything and then throw (issue #14)
+    Boolean proceeds = TraceFlow.ensureContext('NonExistentContext', TraceHistory.HistoryType.Log);
+
+    // Assert: the operation is skipped, the running contexts are left alone, and the misuse is in the history
+    Assert.isFalse(proceeds);
+    Assert.areEqual('InnerContext', TraceFlow.currentContextName());
+    TraceHistory last = TraceFlow.lastHistory();
+    Assert.isTrue(last.isLog());
+    Assert.areEqual('InnerContext', last.getContextName());
+    Assert.isTrue(last.containsText('ignored: Log on "NonExistentContext"'), last.getMessage());
   }
 
   @isTest
