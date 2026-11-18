@@ -36,6 +36,36 @@ git submodule update --init --recursive
 
 `sf project deploy start -d force-app/main/default/classes/ApexTrace` deploys it like any source folder. A Makefile is also included for direct installs (`make install`).
 
+## AI agents
+
+This repository ships agent skills and a rule for [Claude Code](https://claude.com/claude-code) under `.claude/`:
+
+| Path | Purpose |
+|---|---|
+| `.claude/rules/apex-trace.md` | Short rules applied to `*.cls` and `*.trigger` files: keep the started `Trace` instance, close it on every path, assert the path and usage in tests, write test descriptions in the project's language |
+| `.claude/skills/apex-trace-logging/` | `Trace` in production code: `start` / `log` / `finish` / `skip` / `abort`, nesting, Strict and Relaxed modes, the debug log format |
+| `.claude/skills/apex-trace-testing/` | `TraceFlow` path checks, `discardArrange()`, `TraceUsage` assertions with `usageOf`, bulk tests |
+
+The skills describe the version of the tag they come from. After you upgrade ApexTrace, update the skills from the matching tag too.
+
+### Git submodule or clone
+
+The files are already in your project inside the ApexTrace folder. Claude Code picks them up once it reads a file in that folder. Nothing to copy.
+
+### Unlocked package
+
+The package installs only Apex classes. Copy the skills and the rule from the git tag that matches your installed version (replace `v1.6.1` with it):
+
+```bash
+rm -rf /tmp/apex-trace
+git clone --depth 1 --branch v1.6.1 https://github.com/krile136/ApexTrace.git /tmp/apex-trace
+mkdir -p .claude/skills .claude/rules
+cp -r /tmp/apex-trace/.claude/skills/* .claude/skills/
+cp /tmp/apex-trace/.claude/rules/apex-trace.md .claude/rules/
+```
+
+Run it from your project root. It overwrites earlier copies of these skills and leaves your other skills alone.
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
