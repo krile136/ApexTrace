@@ -33,7 +33,7 @@
  * Usage example (in a test):
  * ```
  * new SomeUsecase(ids).invoke();
- * TraceFlow.lastUsage()
+ * TraceFlow.usageOf('Some usecase')
  *   .assertSoqlQueriesAtMost(3)
  *   .assertDmlStatementsAtMost(1);
  * ```

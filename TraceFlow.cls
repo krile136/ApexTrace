@@ -464,7 +464,7 @@ public with sharing class TraceFlow {
    * (e.g. an exception unwound past them) recorded no usage and are not counted.
    *
    * ```
-   * TraceFlow.usageOf('集金オブジェクトの再生成')
+   * TraceFlow.usageOf('Recalculate account totals')
    *   .assertInvocationsAtMost(1)
    *   .assertSoqlQueriesAtMost(10);
    * ```

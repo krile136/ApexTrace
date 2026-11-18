@@ -43,14 +43,14 @@
  *
  * Nesting example:
  * ```
- * Trace outer = Trace.of('Outer');
- * outer.start();
- * Trace inner = Trace.of('Inner');
- * inner.start();
- * inner.log('inner processing');
- * inner.finish();
- * outer.log('outer processing');
- * outer.finish();
+ * Trace parentTrace = Trace.of('Parent');
+ * parentTrace.start();
+ * Trace childTrace = Trace.of('Child');
+ * childTrace.start();
+ * childTrace.log('child processing');
+ * childTrace.finish();
+ * parentTrace.log('parent processing');
+ * parentTrace.finish();
  * ```
  *
  * Notes:
